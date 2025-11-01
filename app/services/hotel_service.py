@@ -9,7 +9,7 @@ from app.repositories.hotel_repository import HotelRepository
 from app.repositories.station_repository import StationRepository
 from app.schemas.hotel import (
     HotelCreate, HotelUpdate, HotelResponse, 
-    HotelWithStationResponse, HotelListResponse
+    HotelWithStationResponse, HotelListResponse, PerformanceMetrics
 )
 from app.models.hotel import Hotel
 from datetime import date, datetime
@@ -88,7 +88,7 @@ class HotelService:
         # Create hotel
         hotel = self.repository.create(hotel_data, created_by)
         
-        return HotelResponse.model_validate(hotel)
+        return self._hotel_to_response(hotel)
     
     # ========================================
     # READ
@@ -121,9 +121,9 @@ class HotelService:
             )
         
         if include_station:
-            return HotelWithStationResponse.model_validate(hotel)
+            return self._hotel_to_response_with_station(hotel)
         
-        return HotelResponse.model_validate(hotel)
+        return self._hotel_to_response(hotel)
     
     def list_hotels(
         self,
@@ -177,9 +177,9 @@ class HotelService:
             include_station=include_station
         )
         
-        # Convert to response models
+        # Convert to response models with proper performance_metrics handling
         hotel_responses = [
-            HotelResponse.model_validate(hotel) for hotel in hotels
+            self._hotel_to_response(hotel) for hotel in hotels
         ]
         
         return HotelListResponse(
@@ -217,7 +217,7 @@ class HotelService:
         
         hotels = self.repository.get_by_station(station_id, is_active)
         
-        return [HotelResponse.model_validate(hotel) for hotel in hotels]
+        return [self._hotel_to_response(hotel) for hotel in hotels]
     
     def get_hotels_with_contracts(
         self, 
@@ -234,7 +234,7 @@ class HotelService:
         """
         hotels = self.repository.get_with_contract(station_id)
         
-        return [HotelResponse.model_validate(hotel) for hotel in hotels]
+        return [self._hotel_to_response(hotel) for hotel in hotels]
     
     # ========================================
     # UPDATE
@@ -245,61 +245,56 @@ class HotelService:
         Update an existing hotel.
         
         Business Rules:
-        - Cannot change email to one that already exists
+        - Hotel must exist
+        - If email changed, must be unique
         - Contract logic must be valid
+        - Cannot change station_id (business rule)
         
         Args:
             hotel_id: Hotel ID to update
-            hotel_data: Update data (only provided fields)
+            hotel_data: Validated update data
             
         Returns:
             Updated hotel response
             
         Raises:
             HTTPException 404: If hotel not found
+            HTTPException 409: If new email already exists
             HTTPException 400: If validation fails
-            HTTPException 409: If email conflict
         """
-        # Check if hotel exists
-        existing_hotel = self.repository.get_by_id(hotel_id)
-        if not existing_hotel:
+        # Check hotel exists
+        hotel = self.repository.get_by_id(hotel_id)
+        if not hotel:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Hotel with ID {hotel_id} not found"
             )
         
-        # Validate email uniqueness if changing
-        if hotel_data.email and hotel_data.email != existing_hotel.email:
+        # Check email uniqueness if email is being changed
+        if hotel_data.email and hotel_data.email != hotel.email:
             if self.repository.email_exists(hotel_data.email, exclude_id=hotel_id):
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
                     detail=f"Hotel with email '{hotel_data.email}' already exists"
                 )
         
-        # Validate contract logic if any contract fields provided
-        contract_type = hotel_data.contract_type or existing_hotel.contract_type
-        contract_rate = (
-            hotel_data.contract_rate 
-            if hotel_data.contract_rate is not None 
-            else existing_hotel.contract_rate
-        )
-        contract_valid_until = (
-            hotel_data.contract_valid_until 
-            if hotel_data.contract_valid_until is not None 
-            else existing_hotel.contract_valid_until
-        )
-        
+        # Validate contract logic if contract fields are being updated
         if any([
             hotel_data.contract_type is not None,
             hotel_data.contract_rate is not None,
             hotel_data.contract_valid_until is not None
         ]):
-            self._validate_contract_logic(contract_type, contract_rate, contract_valid_until)
+            # Get current values
+            new_type = hotel_data.contract_type or hotel.contract_type
+            new_rate = hotel_data.contract_rate if hotel_data.contract_rate is not None else hotel.contract_rate
+            new_valid_until = hotel_data.contract_valid_until if hotel_data.contract_valid_until is not None else hotel.contract_valid_until
+            
+            self._validate_contract_logic(new_type, new_rate, new_valid_until)
         
         # Update hotel
         updated_hotel = self.repository.update(hotel_id, hotel_data)
         
-        return HotelResponse.model_validate(updated_hotel)
+        return self._hotel_to_response(updated_hotel)
     
     def update_performance_metrics(
         self, 
@@ -307,7 +302,7 @@ class HotelService:
         metrics: Dict[str, Any]
     ) -> HotelResponse:
         """
-        Update hotel performance metrics (called by nightly cron job).
+        Update hotel performance metrics (called by background jobs).
         
         Args:
             hotel_id: Hotel ID
@@ -327,17 +322,15 @@ class HotelService:
                 detail=f"Hotel with ID {hotel_id} not found"
             )
         
-        return HotelResponse.model_validate(updated_hotel)
+        return self._hotel_to_response(updated_hotel)
     
     # ========================================
     # DELETE
     # ========================================
     
-    def delete_hotel(self, hotel_id: int) -> Dict[str, str]:
+    def deactivate_hotel(self, hotel_id: int) -> Dict[str, str]:
         """
-        Soft delete a hotel (deactivate).
-        
-        Note: Soft delete is preferred to preserve historical data.
+        Soft delete a hotel (set is_active = False).
         
         Args:
             hotel_id: Hotel ID to deactivate
@@ -419,7 +412,7 @@ class HotelService:
         update_data = HotelUpdate(is_active=True)
         updated_hotel = self.repository.update(hotel_id, update_data)
         
-        return HotelResponse.model_validate(updated_hotel)
+        return self._hotel_to_response(updated_hotel)
     
     # ========================================
     # PERFORMANCE & REPORTING
@@ -442,7 +435,7 @@ class HotelService:
         """
         hotels = self.repository.get_top_performers(station_id, limit)
         
-        return [HotelResponse.model_validate(hotel) for hotel in hotels]
+        return [self._hotel_to_response(hotel) for hotel in hotels]
     
     def get_low_performers(
         self, 
@@ -463,7 +456,7 @@ class HotelService:
         """
         hotels = self.repository.get_low_performers(station_id, threshold, limit)
         
-        return [HotelResponse.model_validate(hotel) for hotel in hotels]
+        return [self._hotel_to_response(hotel) for hotel in hotels]
     
     def get_hotel_statistics(self, station_id: Optional[int] = None) -> Dict[str, Any]:
         """
@@ -485,9 +478,14 @@ class HotelService:
         with_contracts = sum(1 for h in hotels if h.contract_type != 'ad_hoc')
         whatsapp_enabled = sum(1 for h in hotels if h.whatsapp_enabled)
         
-        # Calculate average performance
-        total_requests = sum(h.performance_metrics.get('total_requests', 0) for h in hotels)
-        total_confirmed = sum(h.performance_metrics.get('confirmed_count', 0) for h in hotels)
+        # Calculate average performance - use get_performance_metrics property
+        total_requests = 0
+        total_confirmed = 0
+        
+        for h in hotels:
+            metrics = h.get_performance_metrics  # Use the property instead of direct access
+            total_requests += metrics.get('total_requests', 0)
+            total_confirmed += metrics.get('confirmed_count', 0)
         
         avg_confirmation_rate = (
             (total_confirmed / total_requests * 100) if total_requests > 0 else 0
@@ -517,14 +515,18 @@ class HotelService:
         hotels, _ = self.repository.get_all(limit=1000)
         
         today = date.today()
-        expired_hotels = [
-            hotel for hotel in hotels
-            if hotel.contract_valid_until 
-            and hotel.contract_valid_until < today
-            and hotel.is_active
-        ]
+        expired_hotels = []
         
-        return [HotelResponse.model_validate(hotel) for hotel in expired_hotels]
+        for hotel in hotels:
+            if not hotel.is_active or not hotel.contract_valid_until:
+                continue
+            
+            # Parse date field safely
+            valid_until = self._parse_date_field(hotel.contract_valid_until)
+            if valid_until and valid_until < today:
+                expired_hotels.append(hotel)
+        
+        return [self._hotel_to_response(hotel) for hotel in expired_hotels]
     
     def get_expiring_contracts(self, days: int = 30) -> List[HotelResponse]:
         """
@@ -543,14 +545,160 @@ class HotelService:
         today = date.today()
         threshold = today + timedelta(days=days)
         
-        expiring_hotels = [
-            hotel for hotel in hotels
-            if hotel.contract_valid_until
-            and today <= hotel.contract_valid_until <= threshold
-            and hotel.is_active
-        ]
+        expiring_hotels = []
         
-        return [HotelResponse.model_validate(hotel) for hotel in expiring_hotels]
+        for hotel in hotels:
+            if not hotel.is_active or not hotel.contract_valid_until:
+                continue
+            
+            # Parse date field safely
+            valid_until = self._parse_date_field(hotel.contract_valid_until)
+            if valid_until and today <= valid_until <= threshold:
+                expiring_hotels.append(hotel)
+        
+        return [self._hotel_to_response(hotel) for hotel in expiring_hotels]
+    
+    # ========================================
+    # HELPER METHODS
+    # ========================================
+    
+    def _parse_date_field(self, date_value: Any) -> Optional[date]:
+        """
+        Safely parse a date field that might be a string or date object.
+        
+        Args:
+            date_value: Date as string (YYYY-MM-DD) or date object or None
+            
+        Returns:
+            date object or None if invalid/None
+        """
+        if date_value is None:
+            return None
+        
+        # Already a date object
+        if isinstance(date_value, date):
+            return date_value
+        
+        # String format - try to parse
+        if isinstance(date_value, str):
+            try:
+                return datetime.strptime(date_value, '%Y-%m-%d').date()
+            except (ValueError, TypeError):
+                return None
+        
+        return None
+    
+    def _hotel_to_response(self, hotel: Hotel) -> HotelResponse:
+        """
+        Convert Hotel model to HotelResponse with proper performance_metrics handling.
+        
+        Args:
+            hotel: Hotel model instance
+            
+        Returns:
+            HotelResponse with guaranteed performance_metrics
+        """
+        # Get performance metrics with defaults if None
+        metrics_data = hotel.get_performance_metrics
+        
+        # Create PerformanceMetrics object
+        performance_metrics = PerformanceMetrics(
+            total_requests=metrics_data.get('total_requests', 0),
+            confirmed_count=metrics_data.get('confirmed_count', 0),
+            declined_count=metrics_data.get('declined_count', 0),
+            avg_response_hours=metrics_data.get('avg_response_hours', 0.0),
+            last_updated=metrics_data.get('last_updated')
+        )
+        
+        # Handle None contract_type - default to ad_hoc
+        from app.schemas.hotel import ContractType
+        contract_type = hotel.contract_type if hotel.contract_type else ContractType.AD_HOC
+        
+        # Build response dict
+        response_data = {
+            "id": hotel.id,
+            "station_id": hotel.station_id,
+            "name": hotel.name,
+            "address": hotel.address,
+            "city": hotel.city,
+            "postal_code": hotel.postal_code,
+            "phone": hotel.phone,
+            "email": hotel.email,
+            "secondary_emails": hotel.secondary_emails,
+            "whatsapp_number": hotel.whatsapp_number,
+            "whatsapp_enabled": hotel.whatsapp_enabled,
+            "contract_type": contract_type,
+            "contract_rate": hotel.contract_rate,
+            "contract_valid_until": hotel.contract_valid_until,
+            "notes": hotel.notes,
+            "performance_metrics": performance_metrics,
+            "is_active": hotel.is_active,
+            "created_at": hotel.created_at,
+            "updated_at": hotel.updated_at
+        }
+        
+        return HotelResponse(**response_data)
+    
+    def _hotel_to_response_with_station(self, hotel: Hotel) -> HotelWithStationResponse:
+        """
+        Convert Hotel model to HotelWithStationResponse.
+        
+        Args:
+            hotel: Hotel model instance with station relationship loaded
+            
+        Returns:
+            HotelWithStationResponse
+        """
+        # Get performance metrics with defaults if None
+        metrics_data = hotel.get_performance_metrics
+        
+        # Create PerformanceMetrics object
+        performance_metrics = PerformanceMetrics(
+            total_requests=metrics_data.get('total_requests', 0),
+            confirmed_count=metrics_data.get('confirmed_count', 0),
+            declined_count=metrics_data.get('declined_count', 0),
+            avg_response_hours=metrics_data.get('avg_response_hours', 0.0),
+            last_updated=metrics_data.get('last_updated')
+        )
+        
+        # Handle None contract_type - default to ad_hoc
+        from app.schemas.hotel import ContractType
+        contract_type = hotel.contract_type if hotel.contract_type else ContractType.AD_HOC
+        
+        # Build station dict
+        station_data = {
+            "id": hotel.station.id,
+            "iata_code": hotel.station.iata_code,
+            "name": hotel.station.name,
+            "city": hotel.station.city,
+            "country": hotel.station.country
+        }
+        
+        # Build response dict
+        response_data = {
+            "id": hotel.id,
+            "station_id": hotel.station_id,
+            "name": hotel.name,
+            "address": hotel.address,
+            "city": hotel.city,
+            "postal_code": hotel.postal_code,
+            "phone": hotel.phone,
+            "email": hotel.email,
+            "secondary_emails": hotel.secondary_emails,
+            "whatsapp_number": hotel.whatsapp_number,
+            "whatsapp_enabled": hotel.whatsapp_enabled,
+            "contract_type": contract_type,
+            "contract_rate": hotel.contract_rate,
+            "contract_valid_until": hotel.contract_valid_until,
+            "notes": hotel.notes,
+            "performance_metrics": performance_metrics,
+            "is_active": hotel.is_active,
+            "created_at": hotel.created_at,
+            "updated_at": hotel.updated_at,
+            "station": station_data
+        }
+        
+        return HotelWithStationResponse(**response_data)
     
     # ========================================
     # VALIDATION HELPERS
@@ -560,7 +708,7 @@ class HotelService:
         self,
         contract_type: str,
         contract_rate: Optional[float],
-        contract_valid_until: Optional[date]
+        contract_valid_until: Optional[Any]  # Can be date, str, or None
     ) -> None:
         """
         Validate contract business rules.
@@ -592,8 +740,11 @@ class HotelService:
             )
         
         # Check expiry date
-        if contract_valid_until and contract_valid_until < date.today():
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="contract_valid_until cannot be in the past"
-            )
+        if contract_valid_until:
+            # Parse date field safely
+            valid_until = self._parse_date_field(contract_valid_until)
+            if valid_until and valid_until < date.today():
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="contract_valid_until cannot be in the past"
+                )
