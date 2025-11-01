@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+
+{% block title %}REMINDER: Layover Request #{{ layover.id }} - Response Needed{% endblock %}
+
+{% block header_title %}⏰ Reminder: Layover Request Pending{% endblock %}
+
+{% block content %}
+<p>Dear {{ hotel.name }} Team,</p>
+
+<p><strong>This is a reminder</strong> about the layover accommodation request we sent earlier. We have not yet received your response.</p>
+
+<div style="background-color: #fee2e2; border-left: 4px solid #ef4444; padding: 16px; margin: 20px 0; border-radius: 4px;">
+    <p style="margin: 0; font-weight: 600; color: #991b1b;">
+        ⚠️ Urgent: Please respond as soon as possible to avoid automatic escalation.
+    </p>
+</div>
+
+<div class="info-box">
+    <h3>📋 LAYOVER DETAILS</h3>
+    <div class="info-row">
+        <span class="info-label">Request ID:</span>
+        <span class="info-value">#{{ layover.id }}</span>
+    </div>
+    <div class="info-row">
+        <span class="info-label">Flight Route:</span>
+        <span class="info-value">{{ layover.origin_station_code }} → {{ layover.destination_station_code }}</span>
+    </div>
+    <div class="info-row">
+        <span class="info-label">Check-In:</span>
+        <span class="info-value">{{ layover.check_in_date.strftime('%B %d, %Y') }} at {{ layover.check_in_time.strftime('%H:%M') }}</span>
+    </div>
+    <div class="info-row">
+        <span class="info-label">Crew Count:</span>
+        <span class="info-value">{{ layover.crew_count }} members</span>
+    </div>
+    <div class="info-row">
+        <span class="info-label">Rooms Needed:</span>
+        <span class="info-value">
+            {% if layover.room_breakdown.singles %}{{ layover.room_breakdown.singles }} Single{% if layover.room_breakdown.singles > 1 %}s{% endif %}{% endif %}
+            {% if layover.room_breakdown.doubles %}, {{ layover.room_breakdown.doubles }} Double{% if layover.room_breakdown.doubles > 1 %}s{% endif %}{% endif %}
+            {% if layover.room_breakdown.suites %}, {{ layover.room_breakdown.suites }} Suite{% if layover.room_breakdown.suites > 1 %}s{% endif %}{% endif %}
+        </span>
+    </div>
+</div>
+
+<div class="info-box" style="background-color: #fef3c7; border-color: #f59e0b;">
+    <h3 style="color: #92400e;">⏰ RESPONSE STATUS</h3>
+    <div class="info-row">
+        <span class="info-label">Original Request Sent:</span>
+        <span class="info-value">{{ layover.sent_at.strftime('%B %d, %Y at %H:%M UTC') }}</span>
+    </div>
+    <div class="info-row">
+        <span class="info-label">This is Reminder:</span>
+        <span class="info-value">#{{ reminder_number }}</span>
+    </div>
+    <div class="info-row">
+        <span class="info-label">Time Elapsed:</span>
+        <span class="info-value">{{ hours_elapsed }} hours</span>
+    </div>
+</div>
+
+<div class="button-container">
+    <a href="{{ confirmation_url }}" class="button button-confirm">
+        ✅ CONFIRM AVAILABILITY
+    </a>
+    <a href="{{ confirmation_url }}" class="button button-decline">
+        ❌ DECLINE REQUEST
+    </a>
+    <a href="{{ confirmation_url }}" class="button button-changes">
+        🔄 REQUEST CHANGES
+    </a>
+</div>
+
+<p style="text-align: center; font-size: 13px; color: #64748b;">
+    If you have already responded via phone or email, please disregard this reminder.
+</p>
+{% endblock %}

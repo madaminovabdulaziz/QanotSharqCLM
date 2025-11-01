@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+
+{% block title %}Hotel Declined: Request #{{ layover.id }}{% endblock %}
+
+{% block header_title %}❌ Hotel Declined Request{% endblock %}
+
+{% block content %}
+<p>Hello {{ recipient_name }},</p>
+
+<p><strong>The hotel has declined</strong> the layover accommodation request. Please review the details below and take action.</p>
+
+<div style="background-color: #fee2e2; border-left: 4px solid #ef4444; padding: 16px; margin: 20px 0; border-radius: 4px;">
+    <p style="margin: 0; font-weight: 600; color: #991b1b;">
+        ❌ Request declined by {{ hotel.name }}
+    </p>
+</div>
+
+<div class="info-box">
+    <h3>📋 REQUEST DETAILS</h3>
+    <div class="info-row">
+        <span class="info-label">Request ID:</span>
+        <span class="info-value">#{{ layover.id }}</span>
+    </div>
+    <div class="info-row">
+        <span class="info-label">Flight Route:</span>
+        <span class="info-value">{{ layover.origin_station_code }} → {{ layover.destination_station_code }}</span>
+    </div>
+    <div class="info-row">
+        <span class="info-label">Station:</span>
+        <span class="info-value">{{ station.name }}</span>
+    </div>
+    <div class="info-row">
+        <span class="info-label">Hotel:</span>
+        <span class="info-value">{{ hotel.name }}</span>
+    </div>
+    <div class="info-row">
+        <span class="info-label">Check-In Date:</span>
+        <span class="info-value">{{ layover.check_in_date.strftime('%B %d, %Y') }}</span>
+    </div>
+</div>
+
+<div class="info-box" style="background-color: #fef3c7; border-color: #f59e0b;">
+    <h3 style="color: #92400e;">❓ DECLINE REASON</h3>
+    {% if layover.hotel_response_note %}
+    <p style="margin: 0; color: #1e293b; white-space: pre-wrap;">{{ layover.hotel_response_note }}</p>
+    {% else %}
+    <p style="margin: 0; color: #64748b;">No additional details provided</p>
+    {% endif %}
+</div>
+
+<div class="info-box">
+    <h3>⏰ RESPONSE TIMELINE</h3>
+    <div class="info-row">
+        <span class="info-label">Declined At:</span>
+        <span class="info-value">{{ layover.declined_at.strftime('%B %d, %Y at %H:%M UTC') }}</span>
+    </div>
+    <div class="info-row">
+        <span class="info-label">Response Time:</span>
+        <span class="info-value">{{ response_time_hours }} hours</span>
+    </div>
+</div>
+
+<div class="divider"></div>
+
+<p style="text-align: center; font-weight: 600; color: #ef4444;">
+    🎯 Recommended Actions:
+</p>
+
+<ol style="color: #475569; line-height: 1.8;">
+    <li><strong>Contact Hotel Directly:</strong> Call {{ hotel.name }} at {{ hotel.phone }} to discuss alternatives</li>
+    <li><strong>Send to Alternate Hotel:</strong> Try another hotel at {{ station.name }}</li>
+    <li><strong>Adjust Dates:</strong> If hotel suggested alternate dates, modify the request</li>
+    <li><strong>Escalate:</strong> Contact the station manager if this is urgent</li>
+</ol>
+
+<div class="button-container">
+    <a href="{{ layover_detail_url }}" class="button" style="background-color: #3b82f6; color: #ffffff;">
+        📋 VIEW REQUEST & TAKE ACTION
+    </a>
+</div>
+{% endblock %}

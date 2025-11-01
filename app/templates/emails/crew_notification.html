@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+
+{% block title %}Your Layover: {{ layover.origin_station_code }}→{{ layover.destination_station_code }} - {{ layover.check_in_date }}{% endblock %}
+
+{% block header_title %}✈️ Your Layover Accommodation Details{% endblock %}
+
+{% block content %}
+<p>Hello {{ crew_member_name }},</p>
+
+<p>Your layover accommodation has been confirmed. Please find the details below.</p>
+
+<div style="background-color: #d1fae5; border-left: 4px solid #22c55e; padding: 16px; margin: 20px 0; border-radius: 4px;">
+    <p style="margin: 0; font-weight: 600; color: #065f46;">
+        ✅ Booking Confirmed
+    </p>
+</div>
+
+<div class="info-box">
+    <h3>🏨 HOTEL INFORMATION</h3>
+    <div class="info-row">
+        <span class="info-label">Hotel Name:</span>
+        <span class="info-value"><strong>{{ hotel.name }}</strong></span>
+    </div>
+    <div class="info-row">
+        <span class="info-label">Address:</span>
+        <span class="info-value">{{ hotel.address }}, {{ hotel.city }}</span>
+    </div>
+    <div class="info-row">
+        <span class="info-label">Phone:</span>
+        <span class="info-value"><a href="tel:{{ hotel.phone }}" style="color: #3b82f6; text-decoration: none;">{{ hotel.phone }}</a></span>
+    </div>
+    {% if layover.hotel_confirmation_number %}
+    <div class="info-row">
+        <span class="info-label">Confirmation #:</span>
+        <span class="info-value"><strong>{{ layover.hotel_confirmation_number }}</strong></span>
+    </div>
+    {% endif %}
+</div>
+
+<div class="button-container" style="margin: 15px 0;">
+    <a href="https://maps.google.com/?q={{ hotel.address }}, {{ hotel.city }}" class="button" style="background-color: #3b82f6; color: #ffffff;">
+        📍 VIEW ON MAP
+    </a>
+</div>
+
+<div class="info-box">
+    <h3>📅 CHECK-IN & CHECK-OUT</h3>
+    <div class="info-row">
+        <span class="info-label">Check-In:</span>
+        <span class="info-value"><strong>{{ layover.check_in_date.strftime('%B %d, %Y') }} at {{ layover.check_in_time.strftime('%H:%M') }}</strong></span>
+    </div>
+    <div class="info-row">
+        <span class="info-label">Check-Out:</span>
+        <span class="info-value"><strong>{{ layover.check_out_date.strftime('%B %d, %Y') }} at {{ layover.check_out_time.strftime('%H:%M') }}</strong></span>
+    </div>
+    <div class="info-row">
+        <span class="info-label">Time Zone:</span>
+        <span class="info-value">{{ station.timezone }} (Local Time)</span>
+    </div>
+</div>
+
+{% if room_details %}
+<div class="info-box">
+    <h3>🛏️ YOUR ROOM</h3>
+    <div class="info-row">
+        <span class="info-label">Room Type:</span>
+        <span class="info-value">{{ room_details.room_type }}</span>
+    </div>
+    {% if room_details.room_number %}
+    <div class="info-row">
+        <span class="info-label">Room Number:</span>
+        <span class="info-value">{{ room_details.room_number }}</span>
+    </div>
+    {% endif %}
+</div>
+{% endif %}
+
+{% if layover.transport_required and layover.transport_details %}
+<div class="info-box">
+    <h3>🚗 TRANSPORT</h3>
+    <p style="margin: 0; color: #1e293b; white-space: pre-wrap;">{{ layover.transport_details }}</p>
+</div>
+{% else %}
+<div class="info-box">
+    <h3>🚗 TRANSPORT</h3>
+    <p style="margin: 0; color: #64748b;">Transport not arranged. Please make your own arrangements.</p>
+</div>
+{% endif %}
+
+{% if layover.special_requirements %}
+<div class="info-box">
+    <h3>📝 SPECIAL NOTES</h3>
+    <p style="margin: 0; color: #1e293b; white-space: pre-wrap;">{{ layover.special_requirements }}</p>
+</div>
+{% endif %}
+
+<div class="divider"></div>
+
+<div class="button-container">
+    {% if crew_portal_url %}
+    <a href="{{ crew_portal_url }}" class="button button-confirm">
+        📱 VIEW FULL DETAILS
+    </a>
+    {% endif %}
+    <a href="data:text/calendar;charset=utf-8,{{ calendar_data }}" download="layover.ics" class="button" style="background-color: #8b5cf6; color: #ffffff;">
+        📅 ADD TO CALENDAR
+    </a>
+</div>
+
+<div class="urgency-notice" style="background-color: #dbeafe; border-color: #3b82f6;">
+    <strong>💡 Pro Tip:</strong> Save this email or take a screenshot for easy reference during your trip.
+</div>
+
+<p style="text-align: center; font-size: 13px; color: #64748b; margin-top: 20px;">
+    Have a safe flight and pleasant layover! ✈️
+</p>
+{% endblock %}

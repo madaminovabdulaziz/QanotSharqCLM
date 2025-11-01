@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Layover Request{% endblock %}</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333333;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 0;
+            background-color: #f4f4f4;
+        }
+        .container {
+            background-color: #ffffff;
+            padding: 0;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin: 20px;
+        }
+        .header {
+            background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%);
+            color: #ffffff;
+            padding: 30px;
+            text-align: center;
+            border-radius: 8px 8px 0 0;
+        }
+        .header h1 {
+            margin: 0;
+            font-size: 24px;
+            font-weight: 600;
+        }
+        .content {
+            padding: 30px;
+        }
+        .info-box {
+            background-color: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+        .info-box h3 {
+            margin-top: 0;
+            color: #1e3a8a;
+            font-size: 16px;
+            font-weight: 600;
+            border-bottom: 2px solid #3b82f6;
+            padding-bottom: 8px;
+        }
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #e2e8f0;
+        }
+        .info-row:last-child {
+            border-bottom: none;
+        }
+        .info-label {
+            font-weight: 600;
+            color: #64748b;
+        }
+        .info-value {
+            color: #1e293b;
+        }
+        .button-container {
+            text-align: center;
+            margin: 30px 0;
+        }
+        .button {
+            display: inline-block;
+            padding: 14px 32px;
+            margin: 8px;
+            text-decoration: none;
+            border-radius: 6px;
+            font-weight: 600;
+            font-size: 15px;
+            transition: all 0.3s ease;
+        }
+        .button-confirm {
+            background-color: #22c55e;
+            color: #ffffff;
+        }
+        .button-confirm:hover {
+            background-color: #16a34a;
+        }
+        .button-decline {
+            background-color: #ef4444;
+            color: #ffffff;
+        }
+        .button-decline:hover {
+            background-color: #dc2626;
+        }
+        .button-changes {
+            background-color: #f59e0b;
+            color: #ffffff;
+        }
+        .button-changes:hover {
+            background-color: #d97706;
+        }
+        .urgency-notice {
+            background-color: #fef3c7;
+            border-left: 4px solid #f59e0b;
+            padding: 12px 16px;
+            margin: 20px 0;
+            border-radius: 4px;
+        }
+        .footer {
+            background-color: #f8fafc;
+            padding: 20px 30px;
+            text-align: center;
+            font-size: 13px;
+            color: #64748b;
+            border-radius: 0 0 8px 8px;
+            border-top: 1px solid #e2e8f0;
+        }
+        .contact-info {
+            margin: 10px 0;
+        }
+        .divider {
+            height: 2px;
+            background: linear-gradient(to right, #e2e8f0, #3b82f6, #e2e8f0);
+            margin: 20px 0;
+        }
+        @media only screen and (max-width: 600px) {
+            .container {
+                margin: 10px;
+            }
+            .content {
+                padding: 20px;
+            }
+            .button {
+                display: block;
+                margin: 10px 0;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>{% block header_title %}✈️ Airline Layover Management{% endblock %}</h1>
+        </div>
+        
+        <div class="content">
+            {% block content %}{% endblock %}
+        </div>
+        
+        <div class="footer">
+            {% block footer %}
+            <div class="divider"></div>
+            <p><strong>Questions or need assistance?</strong></p>
+            <div class="contact-info">
+                📧 <a href="mailto:ops@airline.com" style="color: #3b82f6; text-decoration: none;">ops@airline.com</a><br>
+                📞 +1-800-AIRLINE
+            </div>
+            <p style="margin-top: 15px; font-size: 12px;">
+                This is an automated message from the Airline Layover Management System.<br>
+                Please do not reply to this email.
+            </p>
+            {% endblock %}
+        </div>
+    </div>
+</body>
+</html>

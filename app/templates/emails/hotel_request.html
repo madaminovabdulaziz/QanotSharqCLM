@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+
+{% block title %}Layover Request - {{ layover.origin_station_code }}→{{ layover.destination_station_code }} - {{ layover.check_in_date }}{% endblock %}
+
+{% block header_title %}New Layover Request{% endblock %}
+
+{% block content %}
+<p>Dear {{ hotel.name }} Team,</p>
+
+<p>We have a new layover accommodation request for your hotel. Please review the details below and confirm availability at your earliest convenience.</p>
+
+<div class="info-box">
+    <h3>📋 LAYOVER DETAILS</h3>
+    <div class="info-row">
+        <span class="info-label">Request ID:</span>
+        <span class="info-value">#{{ layover.id }}</span>
+    </div>
+    <div class="info-row">
+        <span class="info-label">Flight Route:</span>
+        <span class="info-value">{{ layover.origin_station_code }} → {{ layover.destination_station_code }}</span>
+    </div>
+    <div class="info-row">
+        <span class="info-label">Station:</span>
+        <span class="info-value">{{ station.name }} ({{ station.code }})</span>
+    </div>
+</div>
+
+<div class="info-box">
+    <h3>📅 CHECK-IN & CHECK-OUT</h3>
+    <div class="info-row">
+        <span class="info-label">Check-In:</span>
+        <span class="info-value">{{ layover.check_in_date.strftime('%B %d, %Y') }} at {{ layover.check_in_time.strftime('%H:%M') }} (Local Time)</span>
+    </div>
+    <div class="info-row">
+        <span class="info-label">Check-Out:</span>
+        <span class="info-value">{{ layover.check_out_date.strftime('%B %d, %Y') }} at {{ layover.check_out_time.strftime('%H:%M') }} (Local Time)</span>
+    </div>
+    <div class="info-row">
+        <span class="info-label">Duration:</span>
+        <span class="info-value">{{ duration_hours }} hours</span>
+    </div>
+</div>
+
+<div class="info-box">
+    <h3>👥 CREW & ROOM REQUIREMENTS</h3>
+    <div class="info-row">
+        <span class="info-label">Crew Members:</span>
+        <span class="info-value">{{ layover.crew_count }}</span>
+    </div>
+    <div class="info-row">
+        <span class="info-label">Room Breakdown:</span>
+        <span class="info-value">
+            {% if layover.room_breakdown.singles %}{{ layover.room_breakdown.singles }} Single{% if layover.room_breakdown.singles > 1 %}s{% endif %}{% endif %}
+            {% if layover.room_breakdown.doubles %}, {{ layover.room_breakdown.doubles }} Double{% if layover.room_breakdown.doubles > 1 %}s{% endif %}{% endif %}
+            {% if layover.room_breakdown.suites %}, {{ layover.room_breakdown.suites }} Suite{% if layover.room_breakdown.suites > 1 %}s{% endif %}{% endif %}
+        </span>
+    </div>
+</div>
+
+{% if layover.special_requirements %}
+<div class="info-box">
+    <h3>📝 SPECIAL REQUIREMENTS</h3>
+    <p style="margin: 0; color: #1e293b;">{{ layover.special_requirements }}</p>
+</div>
+{% endif %}
+
+<div class="urgency-notice">
+    <strong>⏱️ Please respond within 24 hours to avoid delays.</strong>
+</div>
+
+<div class="divider"></div>
+
+<p style="text-align: center; font-size: 16px; font-weight: 600; color: #1e3a8a; margin-bottom: 10px;">
+    How would you like to respond?
+</p>
+
+<div class="button-container">
+    <a href="{{ confirmation_url }}" class="button button-confirm">
+        ✅ CONFIRM AVAILABILITY
+    </a>
+    <a href="{{ confirmation_url }}" class="button button-decline">
+        ❌ DECLINE REQUEST
+    </a>
+    <a href="{{ confirmation_url }}" class="button button-changes">
+        🔄 REQUEST CHANGES
+    </a>
+</div>
+
+<p style="text-align: center; font-size: 13px; color: #64748b; margin-top: 10px;">
+    This link expires in 72 hours ({{ token_expires_at.strftime('%B %d, %Y at %H:%M UTC') }})
+</p>
+{% endblock %}
