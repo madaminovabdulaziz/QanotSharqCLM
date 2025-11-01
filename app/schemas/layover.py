@@ -7,6 +7,7 @@ from datetime import datetime, date, time
 from typing import Optional, List, Dict, Any
 from decimal import Decimal
 from enum import Enum
+from .user import UserPublic
 
 from pydantic import BaseModel, Field, field_validator, model_validator, ConfigDict, condecimal
 
@@ -235,7 +236,7 @@ class LayoverResponse(BaseModel):
 
     station: Optional[StationBase] = None
     hotel: Optional[HotelBase] = None
-    creator: Optional[UserBase] = None
+    created_by_user: UserPublic
 
 
 class LayoverDetailResponse(LayoverResponse):
@@ -287,7 +288,7 @@ class LayoverDetailResponse(LayoverResponse):
     actual_cost: Optional[condecimal(max_digits=10, decimal_places=2)] = None
     currency: str
 
-    created_by: int
+
 
 
 class LayoverListResponse(BaseModel):

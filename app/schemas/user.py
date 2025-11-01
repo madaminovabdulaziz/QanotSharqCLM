@@ -1,10 +1,21 @@
 """
 User Pydantic schemas for request/response validation.
 """
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from typing import Optional, List
 from datetime import datetime
 from app.models.user import UserRole
+
+
+class UserPublic(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    email: str
+    first_name: str
+    last_name: str
+    role: str
+    station_ids: Optional[List[int]] = None  # Included as requested (Option 2)
 
 
 class UserBase(BaseModel):

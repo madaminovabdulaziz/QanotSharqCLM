@@ -23,10 +23,7 @@ from app.models.hotel import Hotel
 
 
 def _seconds_to_hhmm(total_seconds: Optional[float]) -> str:
-    """
-    Convert seconds (possibly None) to 'HH:MM' string.
-    Handles large hour counts without day wrap.
-    """
+    """Convert seconds to 'HH:MM'. Handles None or 0."""
     if not total_seconds or total_seconds <= 0:
         return "00:00"
     total_seconds = int(total_seconds)
@@ -62,13 +59,22 @@ class LayoverRepository:
             query = query.options(
                 joinedload(Layover.station),
                 joinedload(Layover.hotel),
-                joinedload(Layover.creator),
+                joinedload(Layover.created_by_user),  # FIXED: Changed from creator to created_by_user
             )
 
         return query.first()
 
     def get_by_uuid(self, uuid: str) -> Optional[Layover]:
-        return self.db.query(Layover).filter(Layover.uuid == uuid).first()
+        return (
+            self.db.query(Layover)
+            .options(
+                joinedload(Layover.station),
+                joinedload(Layover.hotel),
+                joinedload(Layover.created_by_user),  # FIXED: Changed from creator to created_by_user
+            )
+            .filter(Layover.uuid == uuid)
+            .first()
+        )
 
     def list_layovers(
         self,
@@ -85,11 +91,11 @@ class LayoverRepository:
         order_by: str = "check_in_date",
         order_direction: str = "desc",
     ) -> Tuple[List[Layover], int]:
-        # Base query with eager loading
+
         query = self.db.query(Layover).options(
             joinedload(Layover.station),
             joinedload(Layover.hotel),
-            joinedload(Layover.creator),
+            joinedload(Layover.created_by_user),  # FIXED: Changed from creator to created_by_user
         )
 
         filters = []
@@ -198,7 +204,11 @@ class LayoverRepository:
                     Layover.reminders_paused == False,
                 )
             )
-            .options(joinedload(Layover.hotel), joinedload(Layover.station))
+            .options(
+                joinedload(Layover.hotel),
+                joinedload(Layover.station),
+                joinedload(Layover.created_by_user),  # FIXED: Changed from creator to created_by_user
+            )
             .all()
         )
 
@@ -215,118 +225,86 @@ class LayoverRepository:
                     Layover.status == LayoverStatus.PENDING,
                     Layover.sent_at <= threshold_time,
                     Layover.sent_at.isnot(None),
-                    Layover.escalated_at.is_(None),
-                    Layover.reminders_paused == False,
+                    Layover.reminder_count >= 2,
                 )
             )
             .options(
                 joinedload(Layover.hotel),
                 joinedload(Layover.station),
-                joinedload(Layover.creator),
+                joinedload(Layover.created_by_user),  # FIXED: Changed from creator to created_by_user
             )
             .all()
         )
 
-    def get_upcoming_layovers(
+    def get_confirmed_layovers(
         self,
-        station_ids: Optional[List[int]] = None,
-        days_ahead: int = 7,
+        check_in_date_from: Optional[datetime] = None,
+        check_in_date_to: Optional[datetime] = None,
     ) -> List[Layover]:
-        today = datetime.utcnow().date()
-        future_date = today + timedelta(days=days_ahead)
+        filters = [Layover.status == LayoverStatus.CONFIRMED]
 
-        query = (
+        if check_in_date_from:
+            filters.append(Layover.check_in_date >= check_in_date_from.date())
+
+        if check_in_date_to:
+            filters.append(Layover.check_in_date <= check_in_date_to.date())
+
+        return (
             self.db.query(Layover)
-            .filter(
-                and_(
-                    Layover.check_in_date >= today,
-                    Layover.check_in_date <= future_date,
-                    Layover.status.in_(
-                        [
-                            LayoverStatus.CONFIRMED,
-                            LayoverStatus.PENDING,
-                            LayoverStatus.SENT,
-                        ]
-                    ),
-                )
+            .filter(and_(*filters))
+            .options(
+                joinedload(Layover.hotel),
+                joinedload(Layover.station),
+                joinedload(Layover.crew_assignments),
             )
-            .options(joinedload(Layover.station), joinedload(Layover.hotel))
+            .order_by(Layover.check_in_date)
+            .all()
         )
 
-        if station_ids:
-            query = query.filter(Layover.station_id.in_(station_ids))
-
-        return query.order_by(Layover.check_in_date).all()
-
-    def get_escalated_layovers(
-        self,
-        station_ids: Optional[List[int]] = None,
-    ) -> List[Layover]:
-        query = (
-            self.db.query(Layover)
-            .filter(Layover.status == LayoverStatus.ESCALATED)
-            .options(joinedload(Layover.hotel), joinedload(Layover.station))
-        )
-
-        if station_ids:
-            query = query.filter(Layover.station_id.in_(station_ids))
-
-        return query.order_by(desc(Layover.escalated_at)).all()
-
-    def get_on_hold_layovers(
-        self,
-        station_ids: Optional[List[int]] = None,
-    ) -> List[Layover]:
-        query = (
-            self.db.query(Layover)
-            .filter(Layover.status == LayoverStatus.ON_HOLD)
-            .options(joinedload(Layover.station), joinedload(Layover.hotel))
-        )
-
-        if station_ids:
-            query = query.filter(Layover.station_id.in_(station_ids))
-
-        return query.order_by(desc(Layover.on_hold_at)).all()
-
-    def get_by_trip_id(self, trip_id: str) -> List[Layover]:
+    def get_layovers_by_trip(self, trip_id: str) -> List[Layover]:
         return (
             self.db.query(Layover)
             .filter(Layover.trip_id == trip_id)
-            .options(joinedload(Layover.station), joinedload(Layover.hotel))
+            .options(
+                joinedload(Layover.station),
+                joinedload(Layover.hotel),
+            )
             .order_by(Layover.trip_sequence)
             .all()
         )
 
-    # ==================== STATISTICS & METRICS ====================
-    # Using modern select() + case() + literal_column for MySQL compatibility.
+    # ==================== DASHBOARD METRICS ====================
 
     def get_dashboard_metrics(
         self,
-        station_ids: Optional[List[int]] = None,
         date_from: Optional[datetime] = None,
         date_to: Optional[datetime] = None,
+        station_ids: Optional[List[int]] = None,
     ) -> Dict[str, Any]:
-        # Base selectable
+        # Build base filters
         base_filters = []
-        if station_ids:
-            base_filters.append(Layover.station_id.in_(station_ids))
         if date_from:
             base_filters.append(Layover.created_at >= date_from)
         if date_to:
             base_filters.append(Layover.created_at <= date_to)
+        if station_ids:
+            base_filters.append(Layover.station_id.in_(station_ids))
 
-        # Total
-        total_q = select(func.count()).select_from(Layover)
-        if base_filters:
-            total_q = total_q.where(and_(*base_filters))
-        total = self.db.execute(total_q).scalar() or 0
-
-        # Counts by status
+        # Count by status
         def _count_status(status: LayoverStatus) -> int:
-            q = select(func.count()).select_from(Layover).where(Layover.status == status)
-            if base_filters:
-                q = q.where(and_(*base_filters))
-            return self.db.execute(q).scalar() or 0
+            stmt = (
+                select(func.count(Layover.id))
+                .select_from(Layover)
+                .where(and_(Layover.status == status, *(base_filters or [])))
+            )
+            return self.db.execute(stmt).scalar() or 0
+
+        total_stmt = (
+            select(func.count(Layover.id))
+            .select_from(Layover)
+            .where(and_(*(base_filters or [])))
+        )
+        total = self.db.execute(total_stmt).scalar() or 0
 
         confirmed = _count_status(LayoverStatus.CONFIRMED)
         pending = _count_status(LayoverStatus.PENDING)

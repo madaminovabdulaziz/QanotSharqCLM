@@ -97,6 +97,14 @@ class User(Base, TimestampMixin):
         nullable=True,
         comment="User ID of creator"
     )
+
+
+    created_layovers = relationship(
+        "Layover",
+        foreign_keys="Layover.created_by",
+        back_populates="created_by_user",
+        lazy="dynamic"  # Optional: for better performance with many layovers
+    )
     
     # Indexes
     __table_args__ = (

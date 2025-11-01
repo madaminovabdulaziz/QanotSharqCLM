@@ -296,6 +296,7 @@ class Layover(Base, TimestampMixin):
     # Audit
     created_by = Column(
         Integer,
+        ForeignKey('users.id', ondelete='RESTRICT'),  # ADDED ForeignKey
         nullable=False,
         index=True,
         comment="User ID of creator"
@@ -324,7 +325,13 @@ class Layover(Base, TimestampMixin):
     notes = relationship("LayoverNote", back_populates="layover", cascade="all, delete-orphan")
     files = relationship("FileAttachment", back_populates="layover", cascade="all, delete-orphan")
     tokens = relationship("ConfirmationToken", back_populates="layover", cascade="all, delete-orphan")
-    
+
+
+    created_by_user = relationship(
+        "User",
+        foreign_keys=[created_by],
+        back_populates="created_layovers"
+)
     # Constraints
     __table_args__ = (
         CheckConstraint(
