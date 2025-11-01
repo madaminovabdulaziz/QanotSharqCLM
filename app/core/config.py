@@ -19,12 +19,11 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "mysql+pymysql://root:password@localhost/layover_db"
     
     # Security
-    SECRET_KEY: str = "your-secret-key-here-change-in-production"
-    JWT_SECRET_KEY: str = "your-jwt-secret-key-here-change-in-production"
+    SECRET_KEY: str 
+    JWT_SECRET_KEY: str 
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRATION_HOURS: int = 8
 
-    ALGORITHM: str
     ACCESS_TOKEN_EXPIRE_MINUTES: int
     API_VERSION: str
     

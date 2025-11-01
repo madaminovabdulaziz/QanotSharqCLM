@@ -49,8 +49,10 @@ async def get_current_user(
     if user_id is None:
         raise credentials_exception
     
-    # Get user from database
-    user = UserRepository.get_by_id(db, int(user_id))
+    # Get user from database - FIX: Instantiate repository first
+    user_repo = UserRepository(db)
+    user = user_repo.get_by_id(int(user_id))
+    
     if user is None:
         raise credentials_exception
     

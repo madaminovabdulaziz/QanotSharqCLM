@@ -67,7 +67,7 @@ def create_access_token(
     encoded_jwt = jwt.encode(
         to_encode,
         settings.SECRET_KEY,
-        algorithm=settings.ALGORITHM
+        algorithm=settings.JWT_ALGORITHM
     )
     
     return encoded_jwt
@@ -87,7 +87,7 @@ def decode_access_token(token: str) -> Optional[dict]:
         payload = jwt.decode(
             token,
             settings.SECRET_KEY,
-            algorithms=[settings.ALGORITHM]
+            algorithms=[settings.JWT_ALGORITHM]
         )
         return payload
     except JWTError:
