@@ -267,9 +267,16 @@ class LayoverDetailResponse(LayoverResponse):
 
     hotel_confirmation_number: Optional[str]
 
-    cancelled_at: Optional[datetime]
-    cancellation_reason: Optional[str]
-    cancellation_notice_hours: Optional[int]
+    cancelled_at: Optional[datetime] = None
+    cancellation_reason: Optional[str] = None
+    cancellation_notice_hours: Optional[int] = None
+
+    # expose charge metadata to UI
+    cancellation_charge_applies: Optional[bool] = None
+    cancellation_charge_policy: Optional[str] = None
+    cancellation_charge_percent: Optional[int] = None
+    cancellation_fee_cents: Optional[int] = None
+
 
     trip_id: Optional[str]
     trip_sequence: Optional[int]

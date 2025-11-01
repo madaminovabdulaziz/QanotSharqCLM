@@ -300,6 +300,22 @@ class Layover(Base, TimestampMixin):
         index=True,
         comment="User ID of creator"
     )
+
+        # --- Cancellation Tracking ---
+    cancelled_at = Column(DateTime, nullable=True, comment="When cancellation recorded")
+    cancellation_reason = Column(Text, nullable=True, comment="Reason for cancellation")
+    cancellation_notice_hours = Column(Integer, nullable=True, comment="Hours between cancel time and check-in")
+
+    # Airline-style charge metadata
+    cancellation_charge_applies = Column(Boolean, nullable=False, default=False, server_default="0",
+                                        comment="Whether any cancellation charge applies")
+    cancellation_charge_policy = Column(String(50), nullable=True,
+                                        comment="Tier label (e.g., 'no_charge', '24_48h_50', 'lt_24h_100')")
+    cancellation_charge_percent = Column(Integer, nullable=True,
+                                        comment="Percent of charge applied (e.g., 50, 100)")
+    cancellation_fee_cents = Column(Integer, nullable=True,
+                                    comment="Computed fee (if available) in cents")
+
     
     # Relationships
     station = relationship("Station", back_populates="layovers")

@@ -440,15 +440,26 @@ class LayoverService:
 
         now = datetime.utcnow()
         check_in_datetime = datetime.combine(layover.check_in_date, layover.check_in_time)
-        notice_hours = int((check_in_datetime - now).total_seconds() / 3600)
+        notice_hours = int((check_in_datetime - now).total_seconds() // 3600)
 
-        charge_applies = notice_hours < 24
+        # Airline-standard tiers (Option D)
+        if notice_hours > 48:
+            charge_applies, policy, percent = (False, "no_charge", 0)
+        elif 24 < notice_hours <= 48:
+            charge_applies, policy, percent = (True, "24_48h_50", 50)
+        else:  # <= 24h
+            charge_applies, policy, percent = (True, "lt_24h_100", 100)
+
+        fee_cents = None  # compute later if you have per-night rates
 
         layover.status = LayoverStatus.CANCELLED
         layover.cancelled_at = now
         layover.cancellation_reason = data.cancellation_reason.value
         layover.cancellation_notice_hours = notice_hours
         layover.cancellation_charge_applies = charge_applies
+        layover.cancellation_charge_policy = policy
+        layover.cancellation_charge_percent = percent
+        layover.cancellation_fee_cents = fee_cents
 
         layover.reminders_paused = True
         layover.reminders_paused_reason = f"Cancelled: {data.cancellation_reason.value}"
@@ -462,11 +473,14 @@ class LayoverService:
                 "cancellation_reason": data.cancellation_reason.value,
                 "cancellation_note": data.cancellation_note,
                 "notice_hours": notice_hours,
-                "charge_applies": charge_applies,
-            },
+                "policy": policy,
+                "percent": percent,
+                "fee_cents": fee_cents
+            }
         )
 
         return self._to_detail_response(layover)
+
 
     # ==================== METRICS ====================
 
