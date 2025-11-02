@@ -1,575 +1,522 @@
-# """
-# Notification Service
-# Handles all outbound communications (email, WhatsApp, SMS)
-# """
+"""
+Notification Service
+Orchestrates all outbound communications for layover workflow
+"""
 
-# import smtplib
-# from email.mime.text import MIMEText
-# from email.mime.multipart import MIMEMultipart
-# from typing import Optional, Dict, List
-# from datetime import datetime, timedelta
-# from jinja2 import Environment, FileSystemLoader, select_autoescape
-# from pathlib import Path
-# from sqlalchemy.orm import Session
+import logging
+from typing import Optional, Dict, List
+from datetime import datetime, timedelta
+from sqlalchemy.orm import Session
 
-# from app.repositories.notification_repository import NotificationRepository
-# from app.repositories.layover_repository import LayoverRepository
-# from app.repositories.audit_repository import AuditRepository
-# from app.core.config import settings
+from app.services.email_service import EmailService
+from app.repositories.layover_repository import LayoverRepository
+from app.repositories.user_repository import UserRepository
+from app.repositories.hotel_repository import HotelRepository
+from app.repositories.station_repository import StationRepository
+from app.repositories.audit_repository import AuditRepository
+from app.core.config import settings
+from app.core.exceptions import BusinessRuleException
+
+logger = logging.getLogger(__name__)
 
 
-# class NotificationService:
-#     """Service for sending notifications via email, WhatsApp, SMS"""
-
-#     def __init__(self, db: Session):
-#         self.db = db
-#         self.notification_repo = NotificationRepository(db)
-#         self.layover_repo = LayoverRepository(db)
-#         self.audit_repo = AuditRepository(db)
+class NotificationService:
+    """
+    Service for managing all notifications in layover workflow
+    
+    Handles:
+    - Hotel request emails
+    - Hotel reminder emails
+    - Ops confirmation/decline/change notifications
+    - Escalation alerts
+    - Crew notifications
+    """
+    
+    def __init__(self, db: Session):
+        """Initialize notification service"""
+        self.db = db
+        self.email_service = EmailService(db)
+        self.layover_repo = LayoverRepository(db)
+        self.user_repo = UserRepository(db)
+        self.hotel_repo = HotelRepository(db)
+        self.station_repo = StationRepository(db)
+        self.audit_repo = AuditRepository(db)
+        # NOTE: No self.notification_service - that was causing circular import!
+    
+    # ==================== HOTEL NOTIFICATIONS ====================
+    
+    def send_hotel_request(
+        self,
+        layover_id: int,
+        confirmation_token: str,
+    ) -> Dict:
+        """
+        Send initial hotel confirmation request email
         
-#         # Setup Jinja2 template environment
-#         template_dir = Path(__file__).parent.parent / "templates" / "emails"
-#         self.jinja_env = Environment(
-#             loader=FileSystemLoader(str(template_dir)),
-#             autoescape=select_autoescape(['html', 'xml'])
-#         )
-
-#     def _render_template(
-#         self,
-#         template_name: str,
-#         context: Dict,
-#     ) -> tuple[str, str]:
-#         """
-#         Render email template to HTML and plain text
+        Args:
+            layover_id: ID of the layover
+            confirmation_token: Confirmation token (UUID)
         
-#         Args:
-#             template_name: Name of the template file (e.g., 'hotel_request.html')
-#             context: Template context variables
+        Returns:
+            Dict with success status and notification_id
         
-#         Returns:
-#             Tuple of (html_body, text_body)
-#         """
-#         template = self.jinja_env.get_template(template_name)
-#         html_body = template.render(**context)
+        Raises:
+            BusinessRuleException: If layover/hotel not found or email fails
+        """
+        # Get layover with relations
+        layover = self.layover_repo.get_by_id(layover_id, load_relations=True)
+        if not layover:
+            raise BusinessRuleException("Layover not found")
         
-#         # Simple text conversion (strip HTML tags for plain text version)
-#         # In production, you might want a more sophisticated text renderer
-#         text_body = html_body  # Fallback to HTML if no text template
+        if not layover.hotel:
+            raise BusinessRuleException("Hotel not assigned to layover")
         
-#         return html_body, text_body
-
-#     def _send_email(
-#         self,
-#         to_email: str,
-#         subject: str,
-#         html_body: str,
-#         text_body: str,
-#     ) -> tuple[bool, Optional[str]]:
-#         """
-#         Send email via SMTP
+        if not layover.hotel.email:
+            raise BusinessRuleException(
+                f"Hotel '{layover.hotel.name}' does not have an email address. "
+                "Please update the hotel profile before sending request."
+            )
         
-#         Args:
-#             to_email: Recipient email address
-#             subject: Email subject
-#             html_body: HTML email body
-#             text_body: Plain text email body
+        hotel = layover.hotel
+        station = layover.station
         
-#         Returns:
-#             Tuple of (success: bool, message_id: Optional[str])
-#         """
-#         try:
-#             # Create message
-#             msg = MIMEMultipart('alternative')
-#             msg['From'] = settings.SMTP_FROM_EMAIL
-#             msg['To'] = to_email
-#             msg['Subject'] = subject
+        # Calculate duration
+        checkin_dt = datetime.combine(layover.check_in_date, layover.check_in_time)
+        checkout_dt = datetime.combine(layover.check_out_date, layover.check_out_time)
+        duration_hours = int((checkout_dt - checkin_dt).total_seconds() / 3600)
+        
+        # Build confirmation URL
+        confirmation_url = f"{settings.FRONTEND_URL}/api/confirm/{confirmation_token}"
+        
+        # Token expiration (72 hours from now)
+        token_expires_at = (datetime.utcnow() + timedelta(hours=72)).strftime("%B %d, %Y at %I:%M %p UTC")
+        
+        # Get ops contact info
+        ops_user = None
+        if layover.created_by:
+            ops_user = self.user_repo.get_by_id(layover.created_by)
+        
+        # Prepare template context
+        context = {
+            # App info
+            "app_name": settings.APP_NAME,
+            "support_email": settings.SMTP_FROM_EMAIL,
             
-#             # Attach both plain text and HTML versions
-#             part_text = MIMEText(text_body, 'plain', 'utf-8')
-#             part_html = MIMEText(html_body, 'html', 'utf-8')
+            # Hotel info
+            "hotel_name": hotel.name,
             
-#             msg.attach(part_text)
-#             msg.attach(part_html)
+            # Layover details
+            "layover_id": layover.id,
+            "origin_station": layover.origin_station_code,
+            "destination_station": layover.destination_station_code,
+            "check_in_date": layover.check_in_date.strftime("%B %d, %Y"),
+            "check_in_time": layover.check_in_time.strftime("%I:%M %p"),
+            "check_out_date": layover.check_out_date.strftime("%B %d, %Y"),
+            "check_out_time": layover.check_out_time.strftime("%I:%M %p"),
+            "duration_hours": duration_hours,
+            "crew_count": layover.crew_count,
+            "rooms": layover.room_breakdown,
+            "special_requirements": layover.special_requirements,
+            "transport_required": layover.transport_required,
+            "transport_details": layover.transport_details,
             
-#             # Send via SMTP
-#             with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT) as server:
-#                 if settings.SMTP_TLS:
-#                     server.starttls()
-#                 if settings.SMTP_USER and settings.SMTP_PASSWORD:
-#                     server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
-                
-#                 server.send_message(msg)
+            # Station info
+            "station_name": station.name if station else layover.destination_station_code,
             
-#             # Return success with a generated message ID
-#             message_id = msg['Message-ID'] if 'Message-ID' in msg else None
-#             return True, message_id
+            # Confirmation
+            "confirmation_url": confirmation_url,
+            "token_expires_at": token_expires_at,
             
-#         except Exception as e:
-#             print(f"Email send failed: {str(e)}")
-#             return False, None
-
-#     def send_hotel_request(
-#         self,
-#         layover_id: int,
-#         confirmation_token: str,
-#     ) -> Dict:
-#         """
-#         Send initial hotel confirmation request email
+            # Contact info
+            "ops_contact_name": f"{ops_user.first_name} {ops_user.last_name}" if ops_user else None,
+            "ops_contact_email": ops_user.email if ops_user else settings.SMTP_FROM_EMAIL,
+            "ops_contact_phone": ops_user.phone if ops_user else None,
+        }
         
-#         Args:
-#             layover_id: ID of the layover
-#             confirmation_token: Confirmation token (UUID)
+        # Subject line
+        subject = (
+            f"Layover Request - {layover.origin_station_code}→{layover.destination_station_code} "
+            f"- {layover.check_in_date.strftime('%b %d, %Y')}"
+        )
         
-#         Returns:
-#             Dict with success status and notification_id
-#         """
-#         # Get layover with relations
-#         layover = self.layover_repo.get_by_id(layover_id)
-#         if not layover:
-#             raise ValueError("Layover not found")
-
-#         hotel = layover.hotel
-#         station = layover.station
-        
-#         # Calculate duration
-#         duration_hours = int(
-#             (
-#                 datetime.combine(layover.check_out_date, layover.check_out_time)
-#                 - datetime.combine(layover.check_in_date, layover.check_in_time)
-#             ).total_seconds() / 3600
-#         )
-        
-#         # Build confirmation URL
-#         confirmation_url = f"{settings.FRONTEND_URL}/api/confirm/{confirmation_token}"
-        
-#         # Prepare template context
-#         context = {
-#             "layover": layover,
-#             "hotel": hotel,
-#             "station": station,
-#             "duration_hours": duration_hours,
-#             "confirmation_url": confirmation_url,
-#             "token_expires_at": datetime.utcnow() + timedelta(hours=72),
-#         }
-        
-#         # Render template
-#         html_body, text_body = self._render_template("hotel_request.html", context)
-        
-#         # Subject line
-#         subject = f"Layover Request - {layover.origin_station_code}→{layover.destination_station_code} - {layover.check_in_date.strftime('%b %d, %Y')}"
-        
-#         # Create notification record
-#         notification = self.notification_repo.create(
-#             layover_id=layover_id,
-#             user_id=None,
-#             notification_type="hotel_request",
-#             recipient_email=hotel.email,
-#             recipient_phone=None,
-#             channel="email",
-#             subject=subject,
-#             body_text=text_body,
-#             body_html=html_body,
-#             template_name="hotel_request.html",
-#         )
-        
-#         # Send email
-#         success, external_id = self._send_email(
-#             to_email=hotel.email,
-#             subject=subject,
-#             html_body=html_body,
-#             text_body=text_body,
-#         )
-        
-#         # Update notification status
-#         if success:
-#             self.notification_repo.mark_as_sent(notification.id, external_id)
+        # Send email
+        try:
+            result = self.email_service.send_templated_email(
+                to_email=hotel.email,
+                template_name="hotel_request.html",
+                context=context,
+                subject=subject,
+                cc_emails=[hotel.secondary_email] if hotel.secondary_email else None,
+                layover_id=layover_id,
+                notification_type="hotel_request"
+            )
             
-#             # Audit log
-#             self.audit_repo.create(
-#                 user_id=None,
-#                 user_role="system",
-#                 action_type="email_sent",
-#                 entity_type="layover",
-#                 entity_id=layover_id,
-#                 details={
-#                     "notification_type": "hotel_request",
-#                     "recipient": hotel.email,
-#                     "notification_id": notification.id,
-#                 },
-#             )
+            # Log audit trail
+            if result["success"]:
+                self.audit_repo.create(
+                    user_id=layover.created_by,
+                    user_role="ops_coordinator",
+                    action_type="notification_sent",
+                    entity_type="layover",
+                    entity_id=layover_id,
+                    details={
+                        "notification_type": "hotel_request",
+                        "recipient": hotel.email,
+                        "hotel_name": hotel.name,
+                        "notification_id": result.get("notification_id")
+                    }
+                )
             
-#             return {
-#                 "success": True,
-#                 "notification_id": notification.id,
-#                 "message": "Hotel request email sent successfully",
-#             }
-#         else:
-#             self.notification_repo.mark_as_failed(
-#                 notification.id,
-#                 "SMTP send failed"
-#             )
-            
-#             return {
-#                 "success": False,
-#                 "notification_id": notification.id,
-#                 "message": "Failed to send email",
-#             }
-
-#     def send_hotel_reminder(
-#         self,
-#         layover_id: int,
-#         confirmation_token: str,
-#         reminder_number: int = 1,
-#     ) -> Dict:
-#         """
-#         Send reminder email to hotel
+            return result
         
-#         Args:
-#             layover_id: ID of the layover
-#             confirmation_token: Confirmation token (UUID)
-#             reminder_number: Which reminder (1, 2, etc.)
+        except Exception as e:
+            logger.error(f"Failed to send hotel request email: {str(e)}")
+            raise BusinessRuleException(f"Failed to send email to hotel: {str(e)}")
+    
+    def send_hotel_reminder(
+        self,
+        layover_id: int,
+        confirmation_token: str,
+        reminder_number: int = 1,
+    ) -> Dict:
+        """
+        Send reminder email to hotel for pending request
         
-#         Returns:
-#             Dict with success status
-#         """
-#         layover = self.layover_repo.get_by_id(layover_id)
-#         if not layover:
-#             raise ValueError("Layover not found")
-
-#         hotel = layover.hotel
+        Args:
+            layover_id: ID of the layover
+            confirmation_token: Confirmation token (same as original)
+            reminder_number: 1 for first reminder, 2 for second
         
-#         # Calculate hours elapsed
-#         hours_elapsed = int(
-#             (datetime.utcnow() - layover.sent_at).total_seconds() / 3600
-#         ) if layover.sent_at else 0
+        Returns:
+            Dict with success status
+        """
+        # Get layover with relations
+        layover = self.layover_repo.get_by_id(layover_id, load_relations=True)
+        if not layover:
+            raise BusinessRuleException("Layover not found")
         
-#         # Build confirmation URL
-#         confirmation_url = f"{settings.FRONTEND_URL}/api/confirm/{confirmation_token}"
+        if not layover.hotel or not layover.hotel.email:
+            raise BusinessRuleException("Hotel email not available")
         
-#         # Prepare context
-#         context = {
-#             "layover": layover,
-#             "hotel": hotel,
-#             "confirmation_url": confirmation_url,
-#             "reminder_number": reminder_number,
-#             "hours_elapsed": hours_elapsed,
-#         }
+        hotel = layover.hotel
         
-#         # Render template
-#         html_body, text_body = self._render_template("hotel_reminder.html", context)
+        # Build confirmation URL
+        confirmation_url = f"{settings.FRONTEND_URL}/api/confirm/{confirmation_token}"
         
-#         # Subject
-#         subject = f"REMINDER #{reminder_number}: Layover Request #{layover.id} - Response Needed"
+        # Calculate hours remaining before escalation
+        if layover.sent_at:
+            elapsed_hours = int((datetime.utcnow() - layover.sent_at).total_seconds() / 3600)
+            station_config = layover.station.get_reminder_config() if layover.station else {}
+            escalation_hours = station_config.get("escalation_hours", 36)
+            hours_remaining = max(0, escalation_hours - elapsed_hours)
+        else:
+            hours_remaining = 36
         
-#         # Create notification
-#         notification = self.notification_repo.create(
-#             layover_id=layover_id,
-#             user_id=None,
-#             notification_type="hotel_reminder",
-#             recipient_email=hotel.email,
-#             recipient_phone=None,
-#             channel="email",
-#             subject=subject,
-#             body_text=text_body,
-#             body_html=html_body,
-#             template_name="hotel_reminder.html",
-#         )
+        # Prepare context
+        context = {
+            "app_name": settings.APP_NAME,
+            "support_email": settings.SMTP_FROM_EMAIL,
+            "hotel_name": hotel.name,
+            "layover_id": layover.id,
+            "origin_station": layover.origin_station_code,
+            "destination_station": layover.destination_station_code,
+            "check_in_date": layover.check_in_date.strftime("%B %d, %Y"),
+            "reminder_number": reminder_number,
+            "hours_remaining": hours_remaining,
+            "confirmation_url": confirmation_url,
+        }
         
-#         # Send email
-#         success, external_id = self._send_email(
-#             to_email=hotel.email,
-#             subject=subject,
-#             html_body=html_body,
-#             text_body=text_body,
-#         )
+        # Subject with urgency
+        urgency = "REMINDER" if reminder_number == 1 else "URGENT REMINDER"
+        subject = (
+            f"{urgency}: Layover Request #{layover.id} - "
+            f"{layover.origin_station_code}→{layover.destination_station_code}"
+        )
         
-#         if success:
-#             self.notification_repo.mark_as_sent(notification.id, external_id)
-#             return {"success": True, "notification_id": notification.id}
-#         else:
-#             self.notification_repo.mark_as_failed(notification.id, "SMTP send failed")
-#             return {"success": False, "notification_id": notification.id}
-
-#     def notify_ops_confirmation(
-#         self,
-#         layover_id: int,
-#         recipient_user_id: int,
-#     ) -> Dict:
-#         """
-#         Notify Ops coordinator that hotel confirmed
+        # Send email
+        result = self.email_service.send_templated_email(
+            to_email=hotel.email,
+            template_name="hotel_reminder.html",
+            context=context,
+            subject=subject,
+            layover_id=layover_id,
+            notification_type="hotel_reminder"
+        )
         
-#         Args:
-#             layover_id: ID of the layover
-#             recipient_user_id: ID of Ops user to notify
+        # Log audit
+        if result["success"]:
+            self.audit_repo.create(
+                user_id=None,
+                user_role="system",
+                action_type="reminder_sent",
+                entity_type="layover",
+                entity_id=layover_id,
+                details={
+                    "reminder_number": reminder_number,
+                    "recipient": hotel.email,
+                    "hours_remaining": hours_remaining
+                }
+            )
         
-#         Returns:
-#             Dict with success status
-#         """
-#         layover = self.layover_repo.get_by_id(layover_id)
-#         if not layover:
-#             raise ValueError("Layover not found")
-
-#         # Get recipient user
-#         from app.repositories.user_repository import UserRepository
-#         user_repo = UserRepository(self.db)
-#         recipient = user_repo.get_by_id(recipient_user_id)
+        return result
+    
+    # ==================== OPS NOTIFICATIONS ====================
+    
+    def notify_ops_confirmation(
+        self,
+        layover_id: int,
+        hotel_response: Optional[Dict] = None,
+    ) -> Dict:
+        """
+        Notify Ops when hotel confirms booking
         
-#         if not recipient:
-#             raise ValueError("Recipient user not found")
-
-#         hotel = layover.hotel
-#         station = layover.station
+        Args:
+            layover_id: ID of the layover
+            hotel_response: Response metadata from hotel
         
-#         # Calculate response time
-#         response_time_hours = 0
-#         if layover.sent_at and layover.confirmed_at:
-#             response_time_hours = int(
-#                 (layover.confirmed_at - layover.sent_at).total_seconds() / 3600
-#             )
+        Returns:
+            Dict with success status
+        """
+        layover = self.layover_repo.get_by_id(layover_id, load_relations=True)
+        if not layover:
+            raise BusinessRuleException("Layover not found")
         
-#         # Prepare context
-#         context = {
-#             "layover": layover,
-#             "hotel": hotel,
-#             "station": station,
-#             "recipient_name": f"{recipient.first_name} {recipient.last_name}",
-#             "response_time_hours": response_time_hours,
-#             "layover_detail_url": f"{settings.FRONTEND_URL}/layovers/{layover.id}",
-#         }
+        # Get Ops users to notify (creator + station users)
+        recipients = []
         
-#         # Render template
-#         html_body, text_body = self._render_template("ops_confirmation.html", context)
+        # Add creator
+        if layover.created_by:
+            creator = self.user_repo.get_by_id(layover.created_by)
+            if creator and creator.email:
+                recipients.append(creator.email)
         
-#         # Subject
-#         subject = f"✅ Hotel Confirmed: Request #{layover.id} - {hotel.name}"
+        # Add station users
+        if layover.station_id:
+            station_users = self.user_repo.get_by_station(layover.station_id)
+            recipients.extend([u.email for u in station_users if u.email and u.email not in recipients])
         
-#         # Create notification
-#         notification = self.notification_repo.create(
-#             layover_id=layover_id,
-#             user_id=recipient_user_id,
-#             notification_type="ops_confirmation",
-#             recipient_email=recipient.email,
-#             recipient_phone=None,
-#             channel="email",
-#             subject=subject,
-#             body_text=text_body,
-#             body_html=html_body,
-#             template_name="ops_confirmation.html",
-#         )
+        if not recipients:
+            logger.warning(f"No Ops recipients found for layover {layover_id} confirmation")
+            return {"success": False, "message": "No recipients"}
         
-#         # Send email
-#         success, external_id = self._send_email(
-#             to_email=recipient.email,
-#             subject=subject,
-#             html_body=html_body,
-#             text_body=text_body,
-#         )
+        # Prepare context
+        context = {
+            "app_name": settings.APP_NAME,
+            "layover_id": layover.id,
+            "hotel_name": layover.hotel.name if layover.hotel else "Unknown",
+            "origin_station": layover.origin_station_code,
+            "destination_station": layover.destination_station_code,
+            "check_in_date": layover.check_in_date.strftime("%B %d, %Y"),
+            "check_in_time": layover.check_in_time.strftime("%I:%M %p"),
+            "crew_count": layover.crew_count,
+            "confirmation_number": hotel_response.get("confirmation_number") if hotel_response else None,
+            "hotel_note": hotel_response.get("note") if hotel_response else None,
+            "confirmed_at": datetime.utcnow().strftime("%B %d, %Y at %I:%M %p UTC"),
+            "layover_url": f"{settings.FRONTEND_URL}/layovers/{layover.id}",
+        }
         
-#         if success:
-#             self.notification_repo.mark_as_sent(notification.id, external_id)
-#             return {"success": True, "notification_id": notification.id}
-#         else:
-#             self.notification_repo.mark_as_failed(notification.id, "SMTP send failed")
-#             return {"success": False, "notification_id": notification.id}
-
-#     def notify_ops_decline(
-#         self,
-#         layover_id: int,
-#         recipient_user_id: int,
-#     ) -> Dict:
-#         """
-#         Notify Ops coordinator that hotel declined
+        subject = f"✅ Hotel Confirmed: Request #{layover.id} - {layover.hotel.name}"
         
-#         Args:
-#             layover_id: ID of the layover
-#             recipient_user_id: ID of Ops user to notify
+        # Send to all recipients
+        results = []
+        for email in recipients:
+            result = self.email_service.send_templated_email(
+                to_email=email,
+                template_name="ops_confirmation.html",
+                context=context,
+                subject=subject,
+                layover_id=layover_id,
+                notification_type="ops_confirmation"
+            )
+            results.append(result)
         
-#         Returns:
-#             Dict with success status
-#         """
-#         layover = self.layover_repo.get_by_id(layover_id)
-#         if not layover:
-#             raise ValueError("Layover not found")
-
-#         from app.repositories.user_repository import UserRepository
-#         user_repo = UserRepository(self.db)
-#         recipient = user_repo.get_by_id(recipient_user_id)
+        # Log audit
+        self.audit_repo.create(
+            user_id=None,
+            user_role="system",
+            action_type="notification_sent",
+            entity_type="layover",
+            entity_id=layover_id,
+            details={
+                "notification_type": "ops_confirmation",
+                "recipients": recipients,
+                "hotel_name": layover.hotel.name if layover.hotel else None
+            }
+        )
         
-#         if not recipient:
-#             raise ValueError("Recipient user not found")
-
-#         hotel = layover.hotel
-#         station = layover.station
+        return {
+            "success": all(r["success"] for r in results),
+            "message": f"Notifications sent to {len(recipients)} recipient(s)"
+        }
+    
+    def notify_ops_decline(
+        self,
+        layover_id: int,
+        decline_reason: str,
+        decline_note: Optional[str] = None,
+    ) -> Dict:
+        """
+        Notify Ops when hotel declines booking
         
-#         # Calculate response time
-#         response_time_hours = 0
-#         if layover.sent_at and layover.declined_at:
-#             response_time_hours = int(
-#                 (layover.declined_at - layover.sent_at).total_seconds() / 3600
-#             )
+        Args:
+            layover_id: ID of the layover
+            decline_reason: Reason for decline
+            decline_note: Additional note from hotel
         
-#         # Prepare context
-#         context = {
-#             "layover": layover,
-#             "hotel": hotel,
-#             "station": station,
-#             "recipient_name": f"{recipient.first_name} {recipient.last_name}",
-#             "response_time_hours": response_time_hours,
-#             "layover_detail_url": f"{settings.FRONTEND_URL}/layovers/{layover.id}",
-#         }
+        Returns:
+            Dict with success status
+        """
+        layover = self.layover_repo.get_by_id(layover_id, load_relations=True)
+        if not layover:
+            raise BusinessRuleException("Layover not found")
         
-#         # Render template
-#         html_body, text_body = self._render_template("ops_decline.html", context)
+        # Get Ops recipients (same logic as confirmation)
+        recipients = []
+        if layover.created_by:
+            creator = self.user_repo.get_by_id(layover.created_by)
+            if creator and creator.email:
+                recipients.append(creator.email)
         
-#         # Subject
-#         subject = f"❌ Hotel Declined: Request #{layover.id} - {hotel.name}"
+        if layover.station_id:
+            station_users = self.user_repo.get_by_station(layover.station_id)
+            recipients.extend([u.email for u in station_users if u.email and u.email not in recipients])
         
-#         # Create notification
-#         notification = self.notification_repo.create(
-#             layover_id=layover_id,
-#             user_id=recipient_user_id,
-#             notification_type="ops_decline",
-#             recipient_email=recipient.email,
-#             recipient_phone=None,
-#             channel="email",
-#             subject=subject,
-#             body_text=text_body,
-#             body_html=html_body,
-#             template_name="ops_decline.html",
-#         )
+        if not recipients:
+            return {"success": False, "message": "No recipients"}
         
-#         # Send email
-#         success, external_id = self._send_email(
-#             to_email=recipient.email,
-#             subject=subject,
-#             html_body=html_body,
-#             text_body=text_body,
-#         )
+        # Map decline reason to friendly text
+        reason_map = {
+            "fully_booked": "Fully Booked",
+            "insufficient_notice": "Insufficient Notice",
+            "cannot_meet_requirements": "Cannot Meet Requirements",
+            "other": "Other Reason"
+        }
         
-#         if success:
-#             self.notification_repo.mark_as_sent(notification.id, external_id)
-#             return {"success": True, "notification_id": notification.id}
-#         else:
-#             self.notification_repo.mark_as_failed(notification.id, "SMTP send failed")
-#             return {"success": False, "notification_id": notification.id}
-
-#     def send_crew_notification(
-#         self,
-#         layover_id: int,
-#         crew_member_id: int,
-#         crew_portal_token: Optional[str] = None,
-#     ) -> Dict:
-#         """
-#         Send layover details to crew member
+        context = {
+            "app_name": settings.APP_NAME,
+            "layover_id": layover.id,
+            "hotel_name": layover.hotel.name if layover.hotel else "Unknown",
+            "origin_station": layover.origin_station_code,
+            "destination_station": layover.destination_station_code,
+            "check_in_date": layover.check_in_date.strftime("%B %d, %Y"),
+            "decline_reason": reason_map.get(decline_reason, decline_reason),
+            "decline_note": decline_note,
+            "declined_at": datetime.utcnow().strftime("%B %d, %Y at %I:%M %p UTC"),
+            "layover_url": f"{settings.FRONTEND_URL}/layovers/{layover.id}",
+        }
         
-#         Args:
-#             layover_id: ID of the layover
-#             crew_member_id: ID of crew member
-#             crew_portal_token: Optional crew portal access token
+        subject = f"❌ Hotel Declined: Request #{layover.id} - {layover.hotel.name}"
         
-#         Returns:
-#             Dict with success status
-#         """
-#         layover = self.layover_repo.get_by_id(layover_id)
-#         if not layover:
-#             raise ValueError("Layover not found")
-
-#         # Get crew member
-#         from app.repositories.crew_repository import CrewRepository
-#         crew_repo = CrewRepository(self.db)
-#         crew_member = crew_repo.get_by_id(crew_member_id)
+        # Send notifications
+        results = []
+        for email in recipients:
+            result = self.email_service.send_templated_email(
+                to_email=email,
+                template_name="ops_decline.html",
+                context=context,
+                subject=subject,
+                layover_id=layover_id,
+                notification_type="ops_decline"
+            )
+            results.append(result)
         
-#         if not crew_member or not crew_member.email:
-#             raise ValueError("Crew member not found or has no email")
-
-#         hotel = layover.hotel
-#         station = layover.station
+        # Log audit
+        self.audit_repo.create(
+            user_id=None,
+            user_role="system",
+            action_type="notification_sent",
+            entity_type="layover",
+            entity_id=layover_id,
+            details={
+                "notification_type": "ops_decline",
+                "recipients": recipients,
+                "decline_reason": decline_reason
+            }
+        )
         
-#         # Build crew portal URL
-#         crew_portal_url = None
-#         if crew_portal_token:
-#             crew_portal_url = f"{settings.FRONTEND_URL}/crew/portal/{crew_portal_token}"
+        return {
+            "success": all(r["success"] for r in results),
+            "message": f"Decline notifications sent to {len(recipients)} recipient(s)"
+        }
+    
+    def notify_ops_changes_requested(
+        self,
+        layover_id: int,
+        change_types: List[str],
+        change_note: str,
+    ) -> Dict:
+        """
+        Notify Ops when hotel requests changes
         
-#         # Get room details (if assigned)
-#         room_details = None
-#         # TODO: Query layover_crew table for room assignment
+        Args:
+            layover_id: ID of the layover
+            change_types: Types of changes requested
+            change_note: Note from hotel explaining changes
         
-#         # Generate calendar data (iCal format)
-#         calendar_data = self._generate_ical_data(layover, hotel, station)
+        Returns:
+            Dict with success status
+        """
+        layover = self.layover_repo.get_by_id(layover_id, load_relations=True)
+        if not layover:
+            raise BusinessRuleException("Layover not found")
         
-#         # Prepare context
-#         context = {
-#             "layover": layover,
-#             "hotel": hotel,
-#             "station": station,
-#             "crew_member_name": f"{crew_member.first_name} {crew_member.last_name}",
-#             "room_details": room_details,
-#             "crew_portal_url": crew_portal_url,
-#             "calendar_data": calendar_data,
-#         }
+        # Get recipients
+        recipients = []
+        if layover.created_by:
+            creator = self.user_repo.get_by_id(layover.created_by)
+            if creator and creator.email:
+                recipients.append(creator.email)
         
-#         # Render template
-#         html_body, text_body = self._render_template("crew_notification.html", context)
+        if layover.station_id:
+            station_users = self.user_repo.get_by_station(layover.station_id)
+            recipients.extend([u.email for u in station_users if u.email and u.email not in recipients])
         
-#         # Subject
-#         subject = f"Your Layover: {layover.origin_station_code}→{layover.destination_station_code} - {layover.check_in_date.strftime('%b %d')}"
+        if not recipients:
+            return {"success": False, "message": "No recipients"}
         
-#         # Create notification
-#         notification = self.notification_repo.create(
-#             layover_id=layover_id,
-#             user_id=None,  # Crew may not have user accounts
-#             notification_type="crew_notification",
-#             recipient_email=crew_member.email,
-#             recipient_phone=crew_member.phone,
-#             channel="email",
-#             subject=subject,
-#             body_text=text_body,
-#             body_html=html_body,
-#             template_name="crew_notification.html",
-#         )
+        context = {
+            "app_name": settings.APP_NAME,
+            "layover_id": layover.id,
+            "hotel_name": layover.hotel.name if layover.hotel else "Unknown",
+            "origin_station": layover.origin_station_code,
+            "destination_station": layover.destination_station_code,
+            "check_in_date": layover.check_in_date.strftime("%B %d, %Y"),
+            "change_types": change_types,
+            "change_note": change_note,
+            "requested_at": datetime.utcnow().strftime("%B %d, %Y at %I:%M %p UTC"),
+            "layover_url": f"{settings.FRONTEND_URL}/layovers/{layover.id}",
+        }
         
-#         # Send email
-#         success, external_id = self._send_email(
-#             to_email=crew_member.email,
-#             subject=subject,
-#             html_body=html_body,
-#             text_body=text_body,
-#         )
+        subject = f"⚠️ Hotel Requests Changes: Request #{layover.id} - {layover.hotel.name}"
         
-#         if success:
-#             self.notification_repo.mark_as_sent(notification.id, external_id)
-#             return {"success": True, "notification_id": notification.id}
-#         else:
-#             self.notification_repo.mark_as_failed(notification.id, "SMTP send failed")
-#             return {"success": False, "notification_id": notification.id}
-
-#     def _generate_ical_data(self, layover, hotel, station) -> str:
-#         """
-#         Generate iCal format data for calendar import
+        # Send notifications
+        results = []
+        for email in recipients:
+            result = self.email_service.send_templated_email(
+                to_email=email,
+                template_name="ops_changes_requested.html",
+                context=context,
+                subject=subject,
+                layover_id=layover_id,
+                notification_type="ops_changes_requested"
+            )
+            results.append(result)
         
-#         Args:
-#             layover: Layover object
-#             hotel: Hotel object
-#             station: Station object
+        # Log audit
+        self.audit_repo.create(
+            user_id=None,
+            user_role="system",
+            action_type="notification_sent",
+            entity_type="layover",
+            entity_id=layover_id,
+            details={
+                "notification_type": "ops_changes_requested",
+                "recipients": recipients,
+                "change_types": change_types
+            }
+        )
         
-#         Returns:
-#             iCal formatted string (URL encoded)
-#         """
-#         # Simple iCal generation (in production, use icalendar library)
-#         ical = f"""BEGIN:VCALENDAR
-# VERSION:2.0
-# PRODID:-//Airline//Layover System//EN
-# BEGIN:VEVENT
-# UID:{layover.uuid}@airline.com
-# DTSTAMP:{datetime.utcnow().strftime('%Y%m%dT%H%M%SZ')}
-# DTSTART:{datetime.combine(layover.check_in_date, layover.check_in_time).strftime('%Y%m%dT%H%M%S')}
-# DTEND:{datetime.combine(layover.check_out_date, layover.check_out_time).strftime('%Y%m%dT%H%M%S')}
-# SUMMARY:Layover - {hotel.name}
-# LOCATION:{hotel.address}, {hotel.city}
-# DESCRIPTION:Layover at {station.name}. Hotel: {hotel.name}. Confirmation: {layover.hotel_confirmation_number or 'TBD'}
-# END:VEVENT
-# END:VCALENDAR"""
-        
-#         # URL encode for data URI
-#         import urllib.parse
-#         return urllib.parse.quote(ical)
+        return {
+            "success": all(r["success"] for r in results),
+            "message": f"Change request notifications sent to {len(recipients)} recipient(s)"
+        }

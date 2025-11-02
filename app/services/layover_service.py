@@ -6,6 +6,8 @@ Pydantic v2 compatible; API shows Decimal money, DB stores integer cents.
 from datetime import datetime, timedelta
 from typing import List, Optional, Dict, Any, Tuple
 from decimal import Decimal, ROUND_HALF_UP
+import uuid
+import logging
 
 from sqlalchemy.orm import Session
 
@@ -37,7 +39,9 @@ from app.core.exceptions import (
     BusinessRuleException,
 )
 
-import uuid
+from app.services.notification_service import NotificationService
+
+logger = logging.getLogger(__name__)
 
 
 # ==================== MONEY HELPERS ====================
@@ -64,6 +68,7 @@ class LayoverService:
         self.current_user = current_user
         self.repository = LayoverRepository(db)
         self.user_repository = UserRepository(db)
+        self.notification_service = NotificationService(db)
 
     # ==================== CREATE ====================
 
@@ -214,6 +219,27 @@ class LayoverService:
     # ==================== SEND TO HOTEL ====================
 
     def send_to_hotel(self, layover_id: int) -> LayoverDetailResponse:
+        """
+        Send layover request to hotel via email
+        
+        Business Rules:
+        - Only drafts can be sent
+        - Hotel must be assigned
+        - Hotel must have email address
+        - Generate confirmation token
+        - Send email notification
+        - Schedule reminders (Phase 2C)
+        - Update status to SENT → PENDING
+        
+        Args:
+            layover_id: Layover ID
+            
+        Returns:
+            Updated layover
+            
+        Raises:
+            BusinessRuleException: If cannot send
+        """
         layover = self.repository.get_by_id(layover_id, load_relations=True)
         if not layover:
             raise NotFoundException(f"Layover {layover_id} not found")
@@ -227,29 +253,85 @@ class LayoverService:
         if not layover.hotel_id:
             raise BusinessRuleException("Hotel must be assigned before sending")
 
+        # Validate hotel has email BEFORE generating token
+        if not layover.hotel or not layover.hotel.email:
+            raise BusinessRuleException(
+                f"Hotel '{layover.hotel.name if layover.hotel else 'Unknown'}' does not have an email address. "
+                "Please update the hotel profile before sending request."
+            )
+
+        # Generate confirmation token
         token = self._generate_confirmation_token(layover)
 
+        # Update status to SENT
         layover.status = LayoverStatus.SENT
         layover.sent_at = datetime.utcnow()
         layover = self.repository.update(layover)
 
-        layover.status = LayoverStatus.PENDING
-        layover.pending_at = datetime.utcnow()
-        layover = self.repository.update(layover)
-
+        # Log audit - sent
         self._log_audit(
             layover_id=layover.id,
             action="sent_to_hotel",
             details={
                 "hotel_id": layover.hotel_id,
                 "hotel_name": layover.hotel.name if layover.hotel else None,
+                "token": token.token,
                 "token_expires_at": token.expires_at.isoformat(),
             },
         )
 
+        # ==================== SEND EMAIL NOTIFICATION ====================
+        email_sent = False
+        try:
+            email_result = self.notification_service.send_hotel_request(
+                layover_id=layover.id,
+                confirmation_token=token.token
+            )
+            
+            email_sent = email_result.get("success", False)
+            
+            if not email_sent:
+                logger.warning(
+                    f"Email failed for layover {layover.id}: {email_result.get('message')}"
+                )
+            else:
+                logger.info(f"Hotel request email sent successfully for layover {layover.id}")
+        
+        except Exception as e:
+            logger.error(f"Failed to send hotel request email for layover {layover.id}: {str(e)}")
+        # ==================== END EMAIL NOTIFICATION ====================
+
+        # Change to PENDING (waiting for hotel response)
+        layover.status = LayoverStatus.PENDING
+        layover.pending_at = datetime.utcnow()
+        layover = self.repository.update(layover)
+
+        # Log audit - status changed to pending
+        self._log_audit(
+            layover_id=layover.id,
+            action="status_changed",
+            details={
+                "from_status": "SENT",
+                "to_status": "PENDING",
+                "email_sent": email_sent
+            },
+        )
+
+        # TODO: Schedule reminders (Phase 2C - will be added later)
+        # self.reminder_service.schedule_reminders(layover)
+
         return self._to_detail_response(layover)
 
     def _generate_confirmation_token(self, layover: Layover) -> ConfirmationToken:
+        """
+        Generate confirmation token for hotel
+        
+        Args:
+            layover: Layover instance
+            
+        Returns:
+            Confirmation token
+        """
         token = ConfirmationToken(
             token=str(uuid.uuid4()),
             token_type=TokenType.HOTEL_CONFIRMATION,
@@ -258,9 +340,11 @@ class LayoverService:
             expires_at=datetime.utcnow() + timedelta(hours=72),
             is_valid=True,
         )
+        
         self.db.add(token)
         self.db.commit()
         self.db.refresh(token)
+        
         return token
 
     # ==================== DUPLICATE ====================

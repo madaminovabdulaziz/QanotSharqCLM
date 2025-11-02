@@ -34,13 +34,16 @@ class Settings(BaseSettings):
     FRONTEND_URL: str = "http://localhost:8000"
     
     # SMTP Email Settings
-    SMTP_HOST: str = "smtp.gmail.com"
-    SMTP_PORT: int = 587
-    SMTP_TLS: bool = True
-    SMTP_USER: str = ""  # Set in .env
-    SMTP_PASSWORD: str = ""  # Set in .env
-    SMTP_FROM_EMAIL: str = "noreply@airline.com"
-    SMTP_FROM_NAME: str = "Airline Layover Management"
+    SMTP_HOST: str 
+    SMTP_PORT: int 
+    SMTP_TLS: bool 
+    SMTP_USER: str 
+    SMTP_PASSWORD: str
+    SMTP_FROM_EMAIL: str 
+    SMTP_FROM_NAME: str 
+    
+    # Support Contact (ADD THIS LINE)
+    SUPPORT_EMAIL: str = ""  # <-- ADD THIS
     
     # WhatsApp Settings (Optional)
     WHATSAPP_ENABLED: bool = False
