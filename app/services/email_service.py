@@ -1,6 +1,9 @@
 """
-Email Service
+Email Service - CORRECTED VERSION
 Handles SMTP email sending with template rendering and delivery tracking
+
+FIX: Removed 'status' parameter from notification_repo.create() call
+     The repository sets status="pending" internally
 """
 
 import smtplib
@@ -90,16 +93,19 @@ class EmailService:
             BusinessRuleException: If email sending fails critically
         """
         # Create notification record
+        # ✅ FIX: Removed 'status="pending"' parameter
+        # The repository sets it internally
         notification = self.notification_repo.create(
             layover_id=layover_id,
             user_id=user_id,
             notification_type=notification_type,
             recipient_email=to_email,
+            recipient_phone=None,  # Not used for email
             channel="email",
             subject=subject,
-            body_html=html_body,
             body_text=text_body or self._html_to_text(html_body),
-            status="pending"
+            body_html=html_body,
+            template_name=None  # Can be set if using templates
         )
         
         try:
@@ -140,11 +146,10 @@ class EmailService:
                         msg.as_string()
                     )
                 
-                # Update notification status
-                self.notification_repo.update(
+                # ✅ Update notification status to 'sent'
+                self.notification_repo.mark_as_sent(
                     notification.id,
-                    status="sent",
-                    sent_at=datetime.utcnow()
+                    external_id=None  # Could use SMTP message ID if available
                 )
                 
                 logger.info(f"Email sent successfully to {to_email} - Notification ID: {notification.id}")
@@ -158,11 +163,10 @@ class EmailService:
                 # SMTP not configured - log only
                 logger.warning(f"SMTP not configured - Email to {to_email} logged but not sent")
                 
-                self.notification_repo.update(
+                # ✅ Mark as failed with proper error message
+                self.notification_repo.mark_as_failed(
                     notification.id,
-                    status="failed",
-                    error_message="SMTP not configured",
-                    failed_at=datetime.utcnow()
+                    error_message="SMTP not configured"
                 )
                 
                 return {
@@ -175,11 +179,9 @@ class EmailService:
             error_msg = f"SMTP authentication failed: {str(e)}"
             logger.error(error_msg)
             
-            self.notification_repo.update(
+            self.notification_repo.mark_as_failed(
                 notification.id,
-                status="failed",
-                error_message=error_msg,
-                failed_at=datetime.utcnow()
+                error_message=error_msg
             )
             
             raise BusinessRuleException(error_msg)
@@ -188,12 +190,9 @@ class EmailService:
             error_msg = f"SMTP error: {str(e)}"
             logger.error(error_msg)
             
-            self.notification_repo.update(
+            self.notification_repo.mark_as_failed(
                 notification.id,
-                status="failed",
-                error_message=error_msg,
-                failed_at=datetime.utcnow(),
-                retry_count=notification.retry_count + 1
+                error_message=error_msg
             )
             
             return {
@@ -206,11 +205,9 @@ class EmailService:
             error_msg = f"Unexpected error sending email: {str(e)}"
             logger.error(error_msg)
             
-            self.notification_repo.update(
+            self.notification_repo.mark_as_failed(
                 notification.id,
-                status="failed",
-                error_message=error_msg,
-                failed_at=datetime.utcnow()
+                error_message=error_msg
             )
             
             return {

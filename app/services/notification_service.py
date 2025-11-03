@@ -146,7 +146,7 @@ class NotificationService:
                 template_name="hotel_request.html",
                 context=context,
                 subject=subject,
-                cc_emails=[hotel.secondary_email] if hotel.secondary_email else None,
+                cc_emails=hotel.secondary_emails if hotel.secondary_emails else None,
                 layover_id=layover_id,
                 notification_type="hotel_request"
             )
