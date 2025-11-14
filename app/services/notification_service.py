@@ -259,6 +259,122 @@ class NotificationService:
             )
         
         return result
+
+
+
+    def send_amendment_notification(
+        self,
+        layover_id: int,
+        amendment_reason: Optional[str] = None,
+    ) -> Dict:
+        """
+        Send amendment notification email to hotel
+        
+        Args:
+            layover_id: ID of amended layover
+            amendment_reason: Reason for amendment
+        
+        Returns:
+            Dict with success status and notification details
+        """
+        # Load layover with all relations
+        layover = self.layover_repo.get_by_id(layover_id, load_relations=True)
+        
+        if not layover:
+            return {
+                "success": False,
+                "message": f"Layover {layover_id} not found"
+            }
+        
+        hotel = layover.hotel
+        if not hotel:
+            return {
+                "success": False,
+                "message": "Hotel not assigned to layover"
+            }
+        
+        if not hotel.email:
+            return {
+                "success": False,
+                "message": f"Hotel '{hotel.name}' does not have an email address"
+            }
+        
+        # Generate new confirmation token for amendment acknowledgment
+        from app.models.confirmation_token import ConfirmationToken, TokenType
+        from datetime import timedelta
+        import uuid
+        
+        token = ConfirmationToken(
+            token=str(uuid.uuid4()),
+            token_type=TokenType.HOTEL_CONFIRMATION,
+            layover_id=layover.id,
+            hotel_id=hotel.id,
+            expires_at=datetime.utcnow() + timedelta(hours=72),
+            is_valid=True
+        )
+        self.db.add(token)
+        self.db.commit()
+        self.db.refresh(token)
+        
+        # Build confirmation URL
+        confirmation_url = f"{settings.FRONTEND_URL}/confirm/{token.token}"
+        
+        # Prepare template context
+        context = {
+            "layover_id": layover.id,
+            "layover_uuid": layover.uuid,
+            "hotel_name": hotel.name,
+            "origin": layover.origin_station_code or "N/A",
+            "destination": layover.destination_station_code or "N/A",
+            "check_in_date": layover.check_in_date.strftime("%B %d, %Y"),
+            "check_in_time": layover.check_in_time.strftime("%H:%M"),
+            "check_out_date": layover.check_out_date.strftime("%B %d, %Y"),
+            "check_out_time": layover.check_out_time.strftime("%H:%M"),
+            "crew_count": layover.crew_count,
+            "room_breakdown": layover.room_breakdown,
+            "special_requirements": layover.special_requirements or "None",
+            "transport_required": "Yes" if layover.transport_required else "No",
+            "transport_details": layover.transport_details or "N/A",
+            "amendment_reason": amendment_reason or "Details updated by operations team",
+            "amendment_count": layover.amendment_count,
+            "last_amended_at": layover.last_amended_at.strftime("%B %d, %Y at %H:%M") if layover.last_amended_at else "N/A",
+            "confirmation_url": confirmation_url,
+            "contact_email": settings.SMTP_FROM_EMAIL,
+            "airline_name": settings.SMTP_FROM_NAME,
+        }
+        
+        # Email subject
+        subject = f"AMENDED: Layover Request #{layover.id} - {context['origin']}→{context['destination']} - {context['check_in_date']}"
+        
+        # Send email using template
+        result = self.email_service.send_templated_email(
+            to_email=hotel.email,
+            template_name="hotel_amendment.html",
+            context=context,
+            subject=subject,
+            cc_emails=hotel.secondary_emails if hotel.secondary_emails else None,
+            layover_id=layover_id,
+            notification_type="amendment_notification"
+        )
+        
+        # Log audit trail
+        if result.get("success"):
+            self.audit_repo.create(
+                user_id=None,
+                user_role="system",
+                action_type="amendment_notified",
+                entity_type="layover",
+                entity_id=layover_id,
+                details={
+                    "notification_type": "amendment_notification",
+                    "recipient": hotel.email,
+                    "hotel_name": hotel.name,
+                    "notification_id": result.get("notification_id"),
+                    "amendment_count": layover.amendment_count
+                }
+            )
+        
+        return result
     
     # ==================== OPS NOTIFICATIONS ====================
     

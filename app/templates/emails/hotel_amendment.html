@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Layover Amendment - {{ layover_id }}</title>
+    <style>
+        /* Reset styles */
+        body, table, td, a { -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }
+        table, td { mso-table-lspace: 0pt; mso-table-rspace: 0pt; }
+        img { -ms-interpolation-mode: bicubic; border: 0; height: auto; line-height: 100%; outline: none; text-decoration: none; }
+        
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f4f4f4;
+            color: #333333;
+        }
+        
+        .email-container {
+            max-width: 600px;
+            margin: 0 auto;
+            background-color: #ffffff;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #ff9800 0%, #f57c00 100%);
+            color: white;
+            padding: 30px 20px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            margin: 0;
+            font-size: 24px;
+            font-weight: 600;
+        }
+        
+        .header .subtitle {
+            margin-top: 8px;
+            font-size: 14px;
+            opacity: 0.95;
+        }
+        
+        .alert-banner {
+            background-color: #fff3cd;
+            border-left: 4px solid #ff9800;
+            padding: 15px 20px;
+            margin: 20px;
+        }
+        
+        .alert-banner strong {
+            color: #f57c00;
+        }
+        
+        .content {
+            padding: 0 20px 20px 20px;
+        }
+        
+        .greeting {
+            font-size: 16px;
+            line-height: 1.6;
+            margin: 20px 0;
+        }
+        
+        .section {
+            margin: 25px 0;
+            padding: 15px;
+            background-color: #f9f9f9;
+            border-radius: 8px;
+            border-left: 3px solid #ff9800;
+        }
+        
+        .section-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: #f57c00;
+            text-transform: uppercase;
+            margin-bottom: 12px;
+            letter-spacing: 0.5px;
+        }
+        
+        .detail-row {
+            display: flex;
+            padding: 8px 0;
+            border-bottom: 1px solid #e0e0e0;
+        }
+        
+        .detail-row:last-child {
+            border-bottom: none;
+        }
+        
+        .detail-label {
+            font-weight: 600;
+            min-width: 160px;
+            color: #555;
+        }
+        
+        .detail-value {
+            color: #333;
+            flex: 1;
+        }
+        
+        .changed-value {
+            background-color: #fffbf0;
+            padding: 2px 6px;
+            border-radius: 3px;
+            border: 1px solid #ffe0b2;
+            color: #f57c00;
+            font-weight: 600;
+        }
+        
+        .button-container {
+            text-align: center;
+            margin: 30px 0;
+        }
+        
+        .btn {
+            display: inline-block;
+            padding: 14px 32px;
+            margin: 8px 5px;
+            text-decoration: none;
+            border-radius: 6px;
+            font-weight: 600;
+            font-size: 15px;
+            transition: all 0.3s ease;
+        }
+        
+        .btn-primary {
+            background-color: #4caf50;
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            background-color: #45a049;
+        }
+        
+        .btn-secondary {
+            background-color: #f44336;
+            color: white;
+        }
+        
+        .btn-secondary:hover {
+            background-color: #da190b;
+        }
+        
+        .btn-tertiary {
+            background-color: #2196f3;
+            color: white;
+        }
+        
+        .btn-tertiary:hover {
+            background-color: #0b7dda;
+        }
+        
+        .info-box {
+            background-color: #e3f2fd;
+            border-left: 4px solid #2196f3;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 4px;
+        }
+        
+        .info-box p {
+            margin: 5px 0;
+            font-size: 14px;
+            color: #1565c0;
+        }
+        
+        .footer {
+            background-color: #f9f9f9;
+            padding: 20px;
+            text-align: center;
+            font-size: 12px;
+            color: #666;
+            border-top: 1px solid #e0e0e0;
+        }
+        
+        .footer a {
+            color: #1a73e8;
+            text-decoration: none;
+        }
+        
+        /* Mobile responsive */
+        @media only screen and (max-width: 600px) {
+            .email-container {
+                width: 100% !important;
+            }
+            
+            .content {
+                padding: 0 15px 15px 15px !important;
+            }
+            
+            .detail-row {
+                flex-direction: column;
+            }
+            
+            .detail-label {
+                margin-bottom: 4px;
+            }
+            
+            .btn {
+                display: block;
+                margin: 10px 0;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="email-container">
+        <!-- Header -->
+        <div class="header">
+            <h1>🔄 BOOKING AMENDMENT</h1>
+            <div class="subtitle">Layover Request #{{ layover_id }}</div>
+            <div class="subtitle">{{ origin }} → {{ destination }}</div>
+        </div>
+
+        <!-- Alert Banner -->
+        <div class="alert-banner">
+            <strong>⚠️ IMPORTANT:</strong> This booking has been amended. Please review the updated details below and confirm your availability.
+        </div>
+
+        <!-- Content -->
+        <div class="content">
+            <div class="greeting">
+                <p>Hello, <strong>{{ hotel_name }}</strong> Team,</p>
+                <p>The airline has made changes to the following layover booking. Please review the updated details and confirm if you can accommodate these changes.</p>
+            </div>
+
+            <!-- Amendment Info -->
+            <div class="info-box">
+                <p><strong>Amendment Number:</strong> #{{ amendment_count }}</p>
+                <p><strong>Last Updated:</strong> {{ last_amended_at }}</p>
+                <p><strong>Reason:</strong> {{ amendment_reason }}</p>
+            </div>
+
+            <!-- Updated Booking Details -->
+            <div class="section">
+                <div class="section-title">📋 Updated Booking Details</div>
+                
+                <div class="detail-row">
+                    <div class="detail-label">Request ID:</div>
+                    <div class="detail-value">#{{ layover_id }}</div>
+                </div>
+                
+                <div class="detail-row">
+                    <div class="detail-label">Route:</div>
+                    <div class="detail-value">{{ origin }} → {{ destination }}</div>
+                </div>
+                
+                <div class="detail-row">
+                    <div class="detail-label">Check-In:</div>
+                    <div class="detail-value"><span class="changed-value">{{ check_in_date }} at {{ check_in_time }}</span></div>
+                </div>
+                
+                <div class="detail-row">
+                    <div class="detail-label">Check-Out:</div>
+                    <div class="detail-value"><span class="changed-value">{{ check_out_date }} at {{ check_out_time }}</span></div>
+                </div>
+                
+                <div class="detail-row">
+                    <div class="detail-label">Crew Count:</div>
+                    <div class="detail-value"><span class="changed-value">{{ crew_count }} members</span></div>
+                </div>
+                
+                <div class="detail-row">
+                    <div class="detail-label">Room Breakdown:</div>
+                    <div class="detail-value">
+                        <span class="changed-value">
+                            {% if room_breakdown.singles > 0 %}{{ room_breakdown.singles }} Single{% if room_breakdown.singles > 1 %}s{% endif %}{% endif %}
+                            {% if room_breakdown.doubles > 0 %}{% if room_breakdown.singles > 0 %}, {% endif %}{{ room_breakdown.doubles }} Double{% if room_breakdown.doubles > 1 %}s{% endif %}{% endif %}
+                            {% if room_breakdown.suites > 0 %}{% if room_breakdown.singles > 0 or room_breakdown.doubles > 0 %}, {% endif %}{{ room_breakdown.suites }} Suite{% if room_breakdown.suites > 1 %}s{% endif %}{% endif %}
+                        </span>
+                    </div>
+                </div>
+                
+                <div class="detail-row">
+                    <div class="detail-label">Special Requirements:</div>
+                    <div class="detail-value">{{ special_requirements }}</div>
+                </div>
+                
+                <div class="detail-row">
+                    <div class="detail-label">Transportation:</div>
+                    <div class="detail-value">
+                        {{ transport_required }}
+                        {% if transport_details != "N/A" %}
+                        <br><small>{{ transport_details }}</small>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="button-container">
+                <a href="{{ confirmation_url }}?action=confirm" class="btn btn-primary">
+                    ✅ Confirm Changes
+                </a>
+                <a href="{{ confirmation_url }}?action=decline" class="btn btn-secondary">
+                    ❌ Cannot Accommodate
+                </a>
+                <a href="mailto:{{ contact_email }}" class="btn btn-tertiary">
+                    📞 Contact Us
+                </a>
+            </div>
+
+            <!-- Instructions -->
+            <div class="section">
+                <div class="section-title">📌 Next Steps</div>
+                <ol style="line-height: 1.8; padding-left: 20px;">
+                    <li><strong>Review</strong> the updated booking details above</li>
+                    <li><strong>Click "Confirm Changes"</strong> if you can accommodate</li>
+                    <li><strong>Click "Cannot Accommodate"</strong> if you need to decline</li>
+                    <li><strong>Contact us</strong> if you have questions or need clarification</li>
+                </ol>
+            </div>
+
+            <!-- Important Notes -->
+            <div class="info-box">
+                <p><strong>⏰ Please respond within 24 hours</strong></p>
+                <p>If we don't hear from you, we'll send a reminder and may need to consider alternative hotels.</p>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="footer">
+            <p><strong>{{ airline_name }} Layover Management System</strong></p>
+            <p>This is an automated message. Please do not reply to this email.</p>
+            <p>For assistance, contact <a href="mailto:{{ contact_email }}">{{ contact_email }}</a></p>
+            <p style="margin-top: 10px; font-size: 11px; color: #999;">
+                Layover ID: {{ layover_uuid }}
+            </p>
+        </div>
+    </div>
+</body>
+</html>

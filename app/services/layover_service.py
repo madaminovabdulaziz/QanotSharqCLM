@@ -479,6 +479,89 @@ class LayoverService:
         )
 
         return self._to_detail_response(layover)
+    
+
+    def notify_amendment(self, layover_id: int) -> Dict:
+        """
+        Send amendment notification to hotel
+        
+        Args:
+            layover_id: ID of the layover
+        
+        Returns:
+            Dict with success status and message
+        
+        Raises:
+            NotFoundException: If layover not found
+            BusinessRuleException: If layover cannot be notified
+        """
+        # Load layover
+        layover = self.repository.get_by_id(layover_id, load_relations=True)
+        
+        if not layover:
+            raise NotFoundException(f"Layover {layover_id} not found")
+        
+        # Check permissions
+        if not self._can_edit_layover(layover):
+            raise PermissionDeniedException("You do not have permission to notify this layover")
+        
+        # Validate status
+        if layover.status != LayoverStatus.AMENDED:
+            raise BusinessRuleException(
+                f"Can only notify amendments for AMENDED layovers. Current status: {layover.status.value}"
+            )
+        
+        # Check if already notified
+        if layover.hotel_notified_of_amendment:
+            raise BusinessRuleException("Hotel has already been notified of this amendment")
+        
+        # Check hotel email
+        if not layover.hotel or not layover.hotel.email:
+            raise BusinessRuleException("Hotel email not configured")
+        
+        # Send notification
+        result = self.notification_service.send_amendment_notification(
+            layover_id=layover_id,
+            amendment_reason=layover.amendment_reason
+        )
+        
+        if result.get("success"):
+            # Mark as notified
+            layover.hotel_notified_of_amendment = True
+            self.repository.update(layover)
+            
+            # Log audit
+            self._log_audit(
+                layover_id=layover_id,
+                action="amendment_notification_sent",
+                details={
+                    "hotel_email": layover.hotel.email,
+                    "hotel_name": layover.hotel.name,
+                    "amendment_count": layover.amendment_count,
+                    "notification_id": result.get("notification_id")
+                }
+            )
+            
+            return {
+                "success": True,
+                "message": "Amendment notification sent successfully",
+                "notification_id": result.get("notification_id")
+            }
+        else:
+            # Log failure
+            self._log_audit(
+                layover_id=layover_id,
+                action="amendment_notification_failed",
+                details={
+                    "error": result.get("message"),
+                    "hotel_email": layover.hotel.email if layover.hotel else None
+                }
+            )
+            
+            return {
+                "success": False,
+                "message": result.get("message", "Failed to send amendment notification")
+            }
 
     def finalize_layover(self, layover_id: int, data: LayoverFinalize) -> LayoverDetailResponse:
         layover = self.repository.get_by_id(layover_id, load_relations=True)

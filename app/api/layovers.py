@@ -509,6 +509,52 @@ def amend_layover(
         raise HTTPException(status_code=400, detail=str(e))
 
 
+@router.post(
+    "/{layover_id}/notify-amendment",
+    response_model=dict,
+    summary="Send amendment notification to hotel",
+    description="Manually trigger amendment notification email to hotel"
+)
+def notify_amendment(
+    layover_id: int,
+    service: LayoverService = Depends(get_layover_service)
+):
+    """
+    Send amendment notification to hotel
+    
+    **Use cases:**
+    - After amending a confirmed layover
+    - Hotel needs to be notified of changes
+    - Manual trigger after multiple amendments
+    
+    **Actions performed:**
+    1. Validate layover status is AMENDED
+    2. Send email with before/after comparison
+    3. Set hotel_notified_of_amendment = TRUE
+    4. Log notification in audit trail
+    
+    **Business Rules:**
+    - Can only notify AMENDED layovers
+    - Cannot notify if already notified (unless flagged for re-notification)
+    - Hotel must have email configured
+    
+    **Email includes:**
+    - Amendment reason
+    - Updated booking details
+    - Confirmation link to acknowledge changes
+    - Contact information
+    
+    Required permissions: admin, ops_coordinator
+    """
+    try:
+        return service.notify_amendment(layover_id)
+    except NotFoundException as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except PermissionDeniedException as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except BusinessRuleException as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
 # ==================== FINALIZE ====================
 
 @router.post(
