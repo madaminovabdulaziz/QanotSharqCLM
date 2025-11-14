@@ -1,7 +1,41 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from contextlib import asynccontextmanager
 from app.core.config import settings
 from app.api import auth, hotels, stations, layovers, confirm, crew
+from app.services.scheduler_service import start_scheduler, shutdown_scheduler
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+# Lifespan context manager for startup/shutdown events
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    Handle application startup and shutdown events.
+
+    Startup: Start background scheduler for reminders/escalations
+    Shutdown: Gracefully shutdown scheduler
+    """
+    # Startup
+    logger.info("🚀 Starting Crew Layover Management System...")
+    try:
+        start_scheduler()
+        logger.info("✅ Background scheduler started")
+    except Exception as e:
+        logger.error(f"❌ Failed to start scheduler: {e}")
+
+    yield  # Application runs
+
+    # Shutdown
+    logger.info("🛑 Shutting down Crew Layover Management System...")
+    try:
+        shutdown_scheduler()
+        logger.info("✅ Background scheduler stopped")
+    except Exception as e:
+        logger.error(f"❌ Error during scheduler shutdown: {e}")
+
 
 # Create FastAPI application
 app = FastAPI(
@@ -9,7 +43,8 @@ app = FastAPI(
     version=settings.API_VERSION,
     debug=settings.DEBUG,
     docs_url="/api/docs",
-    redoc_url="/api/redoc"
+    redoc_url="/api/redoc",
+    lifespan=lifespan
 )
 
 # Configure CORS

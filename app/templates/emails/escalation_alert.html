@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+
+{% block title %}ESCALATION: Layover #{{ layover.id }} - No Hotel Response{% endblock %}
+
+{% block header_title %}🚨 ESCALATION REQUIRED{% endblock %}
+
+{% block content %}
+<p>Hello {{ recipient_name }},</p>
+
+<div style="background-color: #fee2e2; border-left: 4px solid #dc2626; padding: 20px; margin: 20px 0; border-radius: 4px;">
+    <p style="margin: 0 0 10px 0; font-weight: 700; color: #991b1b; font-size: 18px;">
+        ⚠️ URGENT: Hotel has not responded to layover request
+    </p>
+    <p style="margin: 0; color: #7f1d1d; font-size: 16px;">
+        <strong>Pending for {{ pending_hours }} hours</strong> without confirmation or decline.
+    </p>
+</div>
+
+<div class="info-box">
+    <h3>📋 LAYOVER DETAILS</h3>
+    <div class="info-row">
+        <span class="info-label">Request ID:</span>
+        <span class="info-value">#{{ layover_id }}</span>
+    </div>
+    <div class="info-row">
+        <span class="info-label">Flight Route:</span>
+        <span class="info-value">{{ origin }} → {{ destination }}</span>
+    </div>
+    {% if flight_number %}
+    <div class="info-row">
+        <span class="info-label">Flight Number:</span>
+        <span class="info-value">{{ flight_number }}</span>
+    </div>
+    {% endif %}
+    <div class="info-row">
+        <span class="info-label">Station:</span>
+        <span class="info-value">{{ station_name }}</span>
+    </div>
+    <div class="info-row">
+        <span class="info-label">Crew Count:</span>
+        <span class="info-value">{{ crew_count }} crew members</span>
+    </div>
+    <div class="info-row">
+        <span class="info-label">Check-In:</span>
+        <span class="info-value">{{ check_in_date }} at {{ check_in_time }}</span>
+    </div>
+</div>
+
+<div class="info-box" style="background-color: #fff3cd; border-color: #ffc107;">
+    <h3 style="color: #856404;">🏨 HOTEL INFORMATION</h3>
+    <div class="info-row">
+        <span class="info-label">Hotel Name:</span>
+        <span class="info-value">{{ hotel_name }}</span>
+    </div>
+    <div class="info-row">
+        <span class="info-label">Email:</span>
+        <span class="info-value">{{ hotel_contact_email }}</span>
+    </div>
+    <div class="info-row">
+        <span class="info-label">Phone:</span>
+        <span class="info-value">{{ hotel_contact_phone }}</span>
+    </div>
+    <div class="info-row">
+        <span class="info-label">WhatsApp:</span>
+        <span class="info-value">{{ hotel_whatsapp }}</span>
+    </div>
+</div>
+
+<div class="info-box" style="background-color: #fef3c7; border-color: #f59e0b;">
+    <h3 style="color: #92400e;">⏰ ESCALATION TIMELINE</h3>
+    <div class="info-row">
+        <span class="info-label">Request Sent:</span>
+        <span class="info-value">{{ sent_at }}</span>
+    </div>
+    <div class="info-row">
+        <span class="info-label">Time Elapsed:</span>
+        <span class="info-value" style="font-weight: 700; color: #dc2626;">{{ pending_hours }} hours</span>
+    </div>
+    <div class="info-row">
+        <span class="info-label">Reminders Sent:</span>
+        <span class="info-value">{{ reminder_count }} reminder(s)</span>
+    </div>
+    <div class="info-row">
+        <span class="info-label">Last Reminder:</span>
+        <span class="info-value">{{ last_reminder_sent }}</span>
+    </div>
+    <div class="info-row">
+        <span class="info-label">Created By:</span>
+        <span class="info-value">{{ created_by_name }} ({{ created_by_email }})</span>
+    </div>
+</div>
+
+<div class="divider"></div>
+
+<p style="text-align: center; font-weight: 600; color: #dc2626; font-size: 18px;">
+    🎯 IMMEDIATE ACTION REQUIRED
+</p>
+
+<ol style="color: #475569; line-height: 2; font-size: 16px;">
+    <li><strong>Contact Hotel Directly:</strong> Call {{ hotel_name }} at {{ hotel_contact_phone }}</li>
+    <li><strong>Check WhatsApp:</strong> Try reaching them via WhatsApp if available</li>
+    <li><strong>Alternative Hotel:</strong> If no response, consider sending request to backup hotel</li>
+    <li><strong>Escalate to Station Manager:</strong> Contact station manager if this is urgent</li>
+    <li><strong>Update Status:</strong> Update layover status in system based on hotel response</li>
+</ol>
+
+<div class="alert alert-warning">
+    <strong>⚠️ Critical Timing:</strong> Check-in date is <strong>{{ check_in_date }}</strong>. Crew members need confirmation urgently to plan accordingly.
+</div>
+
+<div class="button-container">
+    <a href="{{ layover_detail_url }}" class="button" style="background-color: #dc2626; color: #ffffff; font-size: 18px; padding: 16px 40px;">
+        🚨 VIEW REQUEST & TAKE ACTION
+    </a>
+</div>
+
+<div class="divider"></div>
+
+<div style="background-color: #f0f9ff; border-left: 4px solid: #0284c7; padding: 16px; margin: 20px 0; border-radius: 4px;">
+    <p style="margin: 0 0 10px 0; font-weight: 600; color: #0c4a6e;">
+        💡 Tips for Escalation:
+    </p>
+    <ul style="margin: 0; padding-left: 20px; color: #0c4a6e;">
+        <li>Try multiple contact methods (email, phone, WhatsApp)</li>
+        <li>Check if hotel has maintenance/closure today</li>
+        <li>Verify email address is correct in hotel profile</li>
+        <li>Consider if this hotel needs removal from preferred list</li>
+        <li>Document all contact attempts in layover notes</li>
+    </ul>
+</div>
+
+<p style="font-size: 14px; color: #64748b; margin-top: 30px;">
+    <strong>Why This Escalation?</strong><br>
+    Our automated system sent this request to the hotel {{ pending_hours }} hours ago and sent {{ reminder_count }} reminder(s), but received no response. This indicates a potential issue requiring management attention.
+</p>
+
+{% endblock %}

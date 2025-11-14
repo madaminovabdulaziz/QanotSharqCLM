@@ -635,4 +635,309 @@ class NotificationService:
         return {
             "success": all(r["success"] for r in results),
             "message": f"Change request notifications sent to {len(recipients)} recipient(s)"
+        }    
+    # ==================== CREW NOTIFICATIONS ====================
+    
+    def send_crew_notification(
+        self,
+        layover_id: int,
+        crew_member_ids: Optional[List[int]] = None
+    ) -> Dict:
+        """
+        Send layover details notification to crew members.
+        
+        Called when layover is finalized. Notifies assigned crew about
+        hotel details, transport, check-in times, etc.
+        
+        Args:
+            layover_id: ID of the layover
+            crew_member_ids: Optional list of specific crew IDs (None = all assigned crew)
+        
+        Returns:
+            Dict with success status and notification_ids
+        
+        Raises:
+            BusinessRuleException: If layover not found or no crew assigned
+        """
+        # Get layover with relations
+        layover = self.layover_repo.get_by_id(layover_id, load_relations=True)
+        if not layover:
+            raise BusinessRuleException("Layover not found")
+        
+        if not layover.hotel:
+            raise BusinessRuleException("Hotel not assigned to layover")
+        
+        hotel = layover.hotel
+        station = layover.station
+        
+        # Get assigned crew
+        from app.repositories.layover_crew_repository import LayoverCrewRepository
+        layover_crew_repo = LayoverCrewRepository(self.db)
+        
+        crew_assignments = layover_crew_repo.get_by_layover_id(layover_id, load_relations=True)
+        
+        if not crew_assignments:
+            raise BusinessRuleException("No crew assigned to this layover")
+        
+        # Filter by specific crew_member_ids if provided
+        if crew_member_ids:
+            crew_assignments = [
+                ca for ca in crew_assignments 
+                if ca.crew_member_id in crew_member_ids
+            ]
+        
+        if not crew_assignments:
+            raise BusinessRuleException("No valid crew members to notify")
+        
+        # Calculate layover duration
+        from datetime import datetime, timedelta
+        checkin_dt = datetime.combine(layover.check_in_date, layover.check_in_time)
+        checkout_dt = datetime.combine(layover.check_out_date, layover.check_out_time)
+        duration_hours = int((checkout_dt - checkin_dt).total_seconds() / 3600)
+        
+        # Get primary contact
+        primary_contact = layover_crew_repo.get_primary_contact(layover_id)
+        primary_contact_name = None
+        if primary_contact and primary_contact.crew_member:
+            primary_contact_name = primary_contact.crew_member.full_name
+        
+        # Prepare hotel address/map link
+        hotel_address = f"{hotel.address}, {station.name}"
+        hotel_map_url = f"https://maps.google.com/?q={hotel.name.replace(' ', '+')},{station.name.replace(' ', '+')}"
+        
+        results = []
+        
+        for assignment in crew_assignments:
+            crew_member = assignment.crew_member
+            
+            if not crew_member.email:
+                logger.warning(f"Crew member {crew_member.id} has no email address")
+                continue
+            
+            # Prepare context for this crew member
+            context = {
+                "crew_member_name": crew_member.full_name,
+                "crew_rank": crew_member.crew_rank.value.replace("_", " ").title(),
+                "layover_id": layover.id,
+                "layover_uuid": layover.uuid,
+                
+                # Flight details
+                "origin": layover.origin_station_code,
+                "destination": layover.destination_station_code,
+                "flight_number": layover.operational_flight_number,
+                "layover_reason": layover.layover_reason.value.replace("_", " ").title(),
+                
+                # Dates & Times
+                "check_in_date": layover.check_in_date.strftime("%B %d, %Y"),
+                "check_in_time": layover.check_in_time.strftime("%H:%M"),
+                "check_out_date": layover.check_out_date.strftime("%B %d, %Y"),
+                "check_out_time": layover.check_out_time.strftime("%H:%M"),
+                "duration_hours": duration_hours,
+                
+                # Hotel details
+                "hotel_name": hotel.name,
+                "hotel_address": hotel_address,
+                "hotel_phone": hotel.phone,
+                "hotel_email": hotel.email if hotel.email else "N/A",
+                "hotel_map_url": hotel_map_url,
+                
+                # Room assignment
+                "room_number": assignment.room_number if assignment.room_number else "TBA",
+                "room_type": assignment.room_type.replace("_", " ").title() if assignment.room_type else "TBA",
+                
+                # Transport
+                "transport_required": layover.transport_required,
+                "transport_details": layover.transport_details if layover.transport_details else "N/A",
+                
+                # Special requirements
+                "special_requirements": layover.special_requirements if layover.special_requirements else "None",
+                
+                # Primary contact
+                "primary_contact_name": primary_contact_name if primary_contact_name else "TBA",
+                
+                # Station
+                "station_name": station.name,
+                "station_contact_email": station.contact_email,
+                "station_contact_phone": station.contact_phone,
+                
+                # App info
+                "app_name": "Qanot Sharq Airlines - Crew Layover Management",
+                "support_email": "operations@qanotsharq.uz",
+            }
+            
+            try:
+                # Send email
+                result = self.email_service.send_templated_email(
+                    to=crew_member.email,
+                    template_name="crew_notification.html",
+                    subject=f"Layover Details: {layover.origin_station_code} → {layover.destination_station_code} - {layover.check_in_date.strftime('%b %d')}",
+                    context=context
+                )
+                
+                results.append({"crew_member_id": crew_member.id, "success": result["success"]})
+                
+                # Update notification status
+                from app.models.layover_crew import NotificationStatus
+                assignment.notification_status = NotificationStatus.SENT
+                assignment.notified_at = datetime.utcnow()
+                layover_crew_repo.update(assignment)
+                
+            except Exception as e:
+                logger.error(f"Failed to send crew notification to {crew_member.email}: {e}")
+                results.append({"crew_member_id": crew_member.id, "success": False, "error": str(e)})
+        
+        # Log audit
+        self.audit_repo.log(
+            user_id=None,  # System action
+            action="crew_notified",
+            entity_type="layover",
+            entity_id=layover_id,
+            details={
+                "crew_member_ids": [r["crew_member_id"] for r in results],
+                "success_count": sum(1 for r in results if r["success"]),
+                "failure_count": sum(1 for r in results if not r["success"])
+            }
+        )
+        
+        return {
+            "success": all(r["success"] for r in results),
+            "message": f"Crew notifications sent to {len(results)} crew member(s)",
+            "results": results
+        }
+    
+    # ==================== ESCALATION NOTIFICATIONS ====================
+    
+    def send_escalation_alert(
+        self,
+        layover_id: int,
+    ) -> Dict:
+        """
+        Send escalation alert to supervisors/managers.
+        
+        Called when a layover has been pending for too long without
+        hotel response. Alerts management to take manual action.
+        
+        Args:
+            layover_id: ID of the layover
+        
+        Returns:
+            Dict with success status and notification_ids
+        
+        Raises:
+            BusinessRuleException: If layover not found
+        """
+        # Get layover with relations
+        layover = self.layover_repo.get_by_id(layover_id, load_relations=True)
+        if not layover:
+            raise BusinessRuleException("Layover not found")
+        
+        if not layover.hotel:
+            raise BusinessRuleException("Hotel not assigned to layover")
+        
+        hotel = layover.hotel
+        station = layover.station
+        
+        # Calculate how long pending
+        from datetime import datetime, timedelta
+        if not layover.sent_at:
+            raise BusinessRuleException("Layover has not been sent to hotel yet")
+        
+        pending_duration = datetime.utcnow() - layover.sent_at
+        pending_hours = int(pending_duration.total_seconds() / 3600)
+        
+        # Get supervisors and ops coordinators
+        supervisors = self.user_repo.get_by_role("supervisor")
+        ops_coordinators = self.user_repo.get_by_role("ops_coordinator")
+        admins = self.user_repo.get_by_role("admin")
+        
+        recipients = list(set(supervisors + ops_coordinators + admins))
+        
+        if not recipients:
+            raise BusinessRuleException("No supervisors/managers found to escalate to")
+        
+        # Get creator details
+        creator = None
+        if layover.created_by:
+            creator = self.user_repo.get_by_id(layover.created_by)
+        
+        # Prepare context
+        context = {
+            "layover_id": layover.id,
+            "layover_uuid": layover.uuid,
+            
+            # Flight details
+            "origin": layover.origin_station_code,
+            "destination": layover.destination_station_code,
+            "flight_number": layover.operational_flight_number,
+            "crew_count": layover.crew_count,
+            
+            # Dates & Times
+            "check_in_date": layover.check_in_date.strftime("%B %d, %Y"),
+            "check_in_time": layover.check_in_time.strftime("%H:%M"),
+            
+            # Hotel details
+            "hotel_name": hotel.name,
+            "hotel_contact_email": hotel.email,
+            "hotel_contact_phone": hotel.phone,
+            "hotel_whatsapp": hotel.whatsapp if hotel.whatsapp else "N/A",
+            
+            # Station
+            "station_name": station.name,
+            
+            # Escalation details
+            "sent_at": layover.sent_at.strftime("%B %d, %Y at %H:%M UTC"),
+            "pending_hours": pending_hours,
+            "reminder_count": layover.reminder_count,
+            "last_reminder_sent": layover.last_reminder_sent_at.strftime("%B %d, %Y at %H:%M UTC") if layover.last_reminder_sent_at else "Never",
+            
+            # Creator
+            "created_by_name": f"{creator.first_name} {creator.last_name}" if creator else "Unknown",
+            "created_by_email": creator.email if creator else "N/A",
+            
+            # Action URL
+            "layover_detail_url": f"{settings.FRONTEND_URL}/layovers/{layover.id}",
+            
+            # App info
+            "app_name": "Qanot Sharq Airlines - Crew Layover Management",
+            "support_email": "operations@qanotsharq.uz",
+        }
+        
+        results = []
+        
+        for recipient in recipients:
+            try:
+                context["recipient_name"] = f"{recipient.first_name} {recipient.last_name}"
+                
+                # Send email
+                result = self.email_service.send_templated_email(
+                    to=recipient.email,
+                    template_name="escalation_alert.html",
+                    subject=f"🚨 ESCALATION: Layover #{layover.id} - No Hotel Response ({pending_hours}h)",
+                    context=context
+                )
+                
+                results.append({"user_id": recipient.id, "success": result["success"]})
+                
+            except Exception as e:
+                logger.error(f"Failed to send escalation alert to {recipient.email}: {e}")
+                results.append({"user_id": recipient.id, "success": False, "error": str(e)})
+        
+        # Log audit
+        self.audit_repo.log(
+            user_id=None,  # System action
+            action="layover_escalated",
+            entity_type="layover",
+            entity_id=layover_id,
+            details={
+                "pending_hours": pending_hours,
+                "recipients": [r["user_id"] for r in results],
+                "success_count": sum(1 for r in results if r["success"]),
+                "failure_count": sum(1 for r in results if not r["success"])
+            }
+        )
+        
+        return {
+            "success": all(r["success"] for r in results),
+            "message": f"Escalation alerts sent to {len(results)} recipient(s)",
+            "results": results
         }

@@ -5,13 +5,14 @@ Includes all CRUD operations and workflow actions
 
 from typing import List, Optional
 from datetime import datetime, date
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status, File, UploadFile
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
 from app.models.user import User
 from app.services.layover_service import LayoverService
+from app.services.crew_service import CrewService
 from app.schemas.layover import (
     LayoverCreate,
     LayoverUpdate,
@@ -28,6 +29,18 @@ from app.schemas.layover import (
     HotelPerformance,
     LayoverStatusEnum,
     LayoverReasonEnum
+)
+from app.schemas.crew import (
+    LayoverCrewCreate,
+    LayoverCrewBulkCreate,
+    LayoverCrewUpdate,
+    LayoverCrewResponse,
+    LayoverCrewListResponse,
+    NoteCreate,
+    NoteResponse,
+    NoteListResponse,
+    FileAttachmentResponse,
+    FileAttachmentListResponse,
 )
 from app.core.exceptions import (
     NotFoundException,
@@ -48,6 +61,14 @@ def get_layover_service(
 ) -> LayoverService:
     """Dependency to get layover service with current user"""
     return LayoverService(db=db, current_user=current_user)
+
+
+def get_crew_service(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+) -> CrewService:
+    """Dependency to get crew service with current user"""
+    return CrewService(db=db, current_user=current_user)
 
 
 def handle_service_exceptions(func):
@@ -788,5 +809,611 @@ def get_hotel_performance(
             date_to=date_to,
             min_requests=min_requests
         )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ==================== CREW ASSIGNMENT ENDPOINTS ====================
+
+@router.post(
+    "/{layover_id}/crew",
+    response_model=LayoverCrewResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Assign crew member to layover",
+    description="Assign a single crew member to a layover with optional room details"
+)
+def assign_crew_to_layover(
+    layover_id: int,
+    data: LayoverCrewCreate,
+    crew_service: CrewService = Depends(get_crew_service)
+):
+    """
+    Assign crew member to layover
+    
+    - **Validates crew count limit**
+    - **Calculates room allocation priority by rank**
+    - **Prevents duplicate assignments**
+    - **Logs audit trail**
+    
+    Required permissions: admin, ops_coordinator
+    """
+    try:
+        return crew_service.assign_crew_to_layover(layover_id, data)
+    except NotFoundException as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except ValidationException as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except PermissionDeniedException as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except BusinessRuleException as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post(
+    "/{layover_id}/crew/bulk",
+    response_model=LayoverCrewListResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Bulk assign crew members to layover",
+    description="Assign multiple crew members at once with auto-primary contact designation"
+)
+def bulk_assign_crew_to_layover(
+    layover_id: int,
+    data: LayoverCrewBulkCreate,
+    crew_service: CrewService = Depends(get_crew_service)
+):
+    """
+    Bulk assign crew members to layover
+    
+    - **Assign multiple crew at once**
+    - **Auto-designate primary contact (Captain/Purser)**
+    - **Validates crew count limit**
+    - **Skips already assigned members**
+    
+    Required permissions: admin, ops_coordinator
+    """
+    try:
+        return crew_service.bulk_assign_crew(layover_id, data)
+    except NotFoundException as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except ValidationException as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except PermissionDeniedException as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except BusinessRuleException as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get(
+    "/{layover_id}/crew",
+    response_model=LayoverCrewListResponse,
+    summary="List crew assigned to layover",
+    description="Get all crew members assigned to a specific layover"
+)
+def list_layover_crew(
+    layover_id: int,
+    crew_service: CrewService = Depends(get_crew_service)
+):
+    """
+    List crew assigned to layover
+    
+    - **Returns all assigned crew**
+    - **Includes crew member details**
+    - **Shows room assignments**
+    - **Displays notification status**
+    """
+    try:
+        return crew_service.get_layover_crew(layover_id)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put(
+    "/{layover_id}/crew/{assignment_id}",
+    response_model=LayoverCrewResponse,
+    summary="Update crew assignment",
+    description="Update crew assignment details (room number, type, primary contact)"
+)
+def update_crew_assignment(
+    layover_id: int,
+    assignment_id: int,
+    data: LayoverCrewUpdate,
+    crew_service: CrewService = Depends(get_crew_service)
+):
+    """
+    Update crew assignment
+    
+    - **Update room number/type**
+    - **Change primary contact**
+    - **Logs audit trail**
+    
+    Required permissions: admin, ops_coordinator
+    """
+    try:
+        return crew_service.update_crew_assignment(assignment_id, data)
+    except NotFoundException as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except ValidationException as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except PermissionDeniedException as e:
+        raise HTTPException(status_code=403, detail=str(e))
+
+
+@router.delete(
+    "/{layover_id}/crew/{crew_member_id}",
+    summary="Remove crew from layover",
+    description="Remove a crew member assignment from a layover"
+)
+def remove_crew_from_layover(
+    layover_id: int,
+    crew_member_id: int,
+    crew_service: CrewService = Depends(get_crew_service)
+):
+    """
+    Remove crew from layover
+    
+    - **Removes crew assignment**
+    - **Logs audit trail**
+    
+    Required permissions: admin, ops_coordinator
+    """
+    try:
+        return crew_service.remove_crew_from_layover(layover_id, crew_member_id)
+    except NotFoundException as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except PermissionDeniedException as e:
+        raise HTTPException(status_code=403, detail=str(e))
+
+
+# ==================== NOTES ENDPOINTS ====================
+
+@router.post(
+    "/{layover_id}/notes",
+    response_model=NoteResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Add note to layover",
+    description="Add an internal note to a layover with optional user tagging"
+)
+def add_note_to_layover(
+    layover_id: int,
+    data: NoteCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Add note to layover
+    
+    - **Internal communication**
+    - **Support @mentions (tagged_user_ids)**
+    - **Immutable once created**
+    - **Logs audit trail**
+    
+    Required permissions: Any authenticated user
+    """
+    from app.models.layover_note import LayoverNote
+    from app.repositories.layover_note_repository import LayoverNoteRepository
+    from app.repositories.layover_repository import LayoverRepository
+    
+    try:
+        # Validate layover exists
+        layover_repo = LayoverRepository(db)
+        layover = layover_repo.get_by_id(layover_id)
+        if not layover:
+            raise HTTPException(status_code=404, detail=f"Layover {layover_id} not found")
+        
+        # Create note
+        note = LayoverNote(
+            layover_id=layover_id,
+            note_text=data.note_text,
+            tagged_user_ids=data.tagged_user_ids,
+            is_internal=data.is_internal,
+            created_by=current_user.id
+        )
+        
+        note_repo = LayoverNoteRepository(db)
+        note = note_repo.create(note)
+        
+        return NoteResponse.model_validate(note)
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get(
+    "/{layover_id}/notes",
+    response_model=NoteListResponse,
+    summary="List notes for layover",
+    description="Get all notes for a specific layover"
+)
+def list_layover_notes(
+    layover_id: int,
+    skip: int = Query(0, ge=0, description="Number of records to skip"),
+    limit: int = Query(50, ge=1, le=100, description="Max records to return"),
+    internal_only: Optional[bool] = Query(None, description="Filter by internal flag"),
+    db: Session = Depends(get_db)
+):
+    """
+    List notes for layover
+    
+    - **Returns notes in reverse chronological order**
+    - **Optional filtering by internal/external**
+    - **Paginated results**
+    """
+    from app.repositories.layover_note_repository import LayoverNoteRepository
+    
+    try:
+        note_repo = LayoverNoteRepository(db)
+        notes = note_repo.get_by_layover_id(
+            layover_id,
+            skip=skip,
+            limit=limit,
+            internal_only=internal_only
+        )
+        
+        total = note_repo.count_by_layover(layover_id)
+        
+        items = [NoteResponse.model_validate(n) for n in notes]
+        
+        return NoteListResponse(items=items, total=total)
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==================== FILE ATTACHMENT ENDPOINTS ====================
+
+@router.post(
+    "/{layover_id}/files",
+    response_model=FileAttachmentResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Upload file to layover",
+    description="Upload a file attachment (rooming list, hotel quote, etc.)"
+)
+async def upload_file_to_layover(
+    layover_id: int,
+    file: UploadFile = File(..., description="File to upload (max 5MB)"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Upload file to layover
+    
+    - **Supported types**: PDF, Excel, Word, Images
+    - **Max size**: 5MB
+    - **Virus scan**: Marked as PENDING initially
+    - **Logs audit trail**
+    
+    Required permissions: admin, ops_coordinator, station_user
+    """
+    from app.models.file_attachment import FileAttachment, ScanStatus
+    from app.repositories.file_attachment_repository import FileAttachmentRepository
+    from app.repositories.layover_repository import LayoverRepository
+    import os
+    import uuid
+    from pathlib import Path
+    
+    try:
+        # Validate layover exists
+        layover_repo = LayoverRepository(db)
+        layover = layover_repo.get_by_id(layover_id)
+        if not layover:
+            raise HTTPException(status_code=404, detail=f"Layover {layover_id} not found")
+        
+        # Validate file size (5MB max)
+        MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB in bytes
+        file_content = await file.read()
+        file_size = len(file_content)
+        
+        if file_size > MAX_FILE_SIZE:
+            raise HTTPException(
+                status_code=413,
+                detail=f"File too large. Max size is 5MB, got {file_size / (1024*1024):.2f}MB"
+            )
+        
+        # Validate file type
+        allowed_types = [
+            "application/pdf",
+            "application/vnd.ms-excel",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "application/msword",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "image/jpeg",
+            "image/png",
+            "image/gif",
+            "text/plain",
+            "text/csv"
+        ]
+        
+        if file.content_type not in allowed_types:
+            raise HTTPException(
+                status_code=415,
+                detail=f"File type '{file.content_type}' not allowed. Supported: PDF, Excel, Word, Images, CSV"
+            )
+        
+        # Create uploads directory if not exists
+        upload_dir = Path("uploads/layovers")
+        upload_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Generate unique filename
+        file_extension = Path(file.filename).suffix
+        unique_filename = f"{layover_id}_{uuid.uuid4()}{file_extension}"
+        file_path = upload_dir / unique_filename
+        
+        # Save file
+        with open(file_path, "wb") as f:
+            f.write(file_content)
+        
+        # Create database record
+        attachment = FileAttachment(
+            layover_id=layover_id,
+            file_name=file.filename,
+            file_size=file_size,
+            file_type=file.content_type,
+            storage_key=str(file_path),
+            scan_status=ScanStatus.PENDING,
+            uploaded_by=current_user.id
+        )
+        
+        file_repo = FileAttachmentRepository(db)
+        attachment = file_repo.create(attachment)
+        
+        return FileAttachmentResponse.model_validate(attachment)
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
+
+
+@router.get(
+    "/{layover_id}/files",
+    response_model=FileAttachmentListResponse,
+    summary="List files for layover",
+    description="Get all file attachments for a specific layover"
+)
+def list_layover_files(
+    layover_id: int,
+    skip: int = Query(0, ge=0, description="Number of records to skip"),
+    limit: int = Query(50, ge=1, le=100, description="Max records to return"),
+    db: Session = Depends(get_db)
+):
+    """
+    List files for layover
+    
+    - **Returns all non-deleted files**
+    - **Ordered by upload date (newest first)**
+    - **Includes scan status**
+    """
+    from app.repositories.file_attachment_repository import FileAttachmentRepository
+    
+    try:
+        file_repo = FileAttachmentRepository(db)
+        files = file_repo.get_by_layover_id(
+            layover_id,
+            skip=skip,
+            limit=limit,
+            include_deleted=False
+        )
+        
+        total = file_repo.count_by_layover(layover_id, include_deleted=False)
+        
+        items = [FileAttachmentResponse.model_validate(f) for f in files]
+        
+        return FileAttachmentListResponse(items=items, total=total)
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get(
+    "/{layover_id}/files/{file_id}",
+    summary="Download file",
+    description="Download a file attachment"
+)
+def download_layover_file(
+    layover_id: int,
+    file_id: int,
+    db: Session = Depends(get_db)
+):
+    """
+    Download file attachment
+    
+    - **Returns file for download**
+    - **Validates file belongs to layover**
+    - **Checks scan status (warns if infected)**
+    """
+    from app.repositories.file_attachment_repository import FileAttachmentRepository
+    from app.models.file_attachment import ScanStatus
+    from fastapi.responses import FileResponse
+    import os
+    
+    try:
+        file_repo = FileAttachmentRepository(db)
+        attachment = file_repo.get_by_id(file_id, include_deleted=False)
+        
+        if not attachment:
+            raise HTTPException(status_code=404, detail=f"File {file_id} not found")
+        
+        if attachment.layover_id != layover_id:
+            raise HTTPException(
+                status_code=403,
+                detail=f"File {file_id} does not belong to layover {layover_id}"
+            )
+        
+        # Warn if file is infected
+        if attachment.scan_status == ScanStatus.INFECTED:
+            raise HTTPException(
+                status_code=403,
+                detail="File is infected and cannot be downloaded"
+            )
+        
+        # Check if file exists
+        if not os.path.exists(attachment.storage_key):
+            raise HTTPException(
+                status_code=404,
+                detail="File not found on server (may have been deleted)"
+            )
+        
+        return FileResponse(
+            path=attachment.storage_key,
+            filename=attachment.file_name,
+            media_type=attachment.file_type
+        )
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete(
+    "/{layover_id}/files/{file_id}",
+    summary="Delete file",
+    description="Soft delete a file attachment"
+)
+def delete_layover_file(
+    layover_id: int,
+    file_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Delete file attachment (soft delete)
+    
+    - **Soft delete (preserves audit trail)**
+    - **Validates file belongs to layover**
+    - **Logs audit trail**
+    
+    Required permissions: admin, ops_coordinator, uploader
+    """
+    from app.repositories.file_attachment_repository import FileAttachmentRepository
+    
+    try:
+        file_repo = FileAttachmentRepository(db)
+        attachment = file_repo.get_by_id(file_id, include_deleted=False)
+        
+        if not attachment:
+            raise HTTPException(status_code=404, detail=f"File {file_id} not found")
+        
+        if attachment.layover_id != layover_id:
+            raise HTTPException(
+                status_code=403,
+                detail=f"File {file_id} does not belong to layover {layover_id}"
+            )
+        
+        # Permission check: admin, ops_coordinator, or original uploader
+        if current_user.role not in ["admin", "ops_coordinator"]:
+            if attachment.uploaded_by != current_user.id:
+                raise HTTPException(
+                    status_code=403,
+                    detail="You can only delete files you uploaded"
+                )
+        
+        file_repo.soft_delete(file_id, deleted_by=current_user.id)
+        
+        return {"message": "File deleted successfully"}
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==================== MANUAL REMINDER TRIGGER ====================
+
+@router.post(
+    "/{layover_id}/send-reminder",
+    summary="Manually send reminder to hotel",
+    description="Manually trigger a reminder email to the hotel (outside automatic schedule)"
+)
+def send_manual_reminder(
+    layover_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Manually send reminder to hotel
+    
+    - **Bypasses automatic schedule**
+    - **Increments reminder count**
+    - **Updates last_reminder_sent_at**
+    - **Respects reminders_paused flag**
+    
+    Use cases:
+    - Hotel requested reminder
+    - Urgent layover needs immediate follow-up
+    - Testing/debugging
+    
+    Required permissions: admin, ops_coordinator, supervisor
+    """
+    from app.services.scheduler_service import get_scheduler_service
+    
+    try:
+        # Permission check
+        if current_user.role not in ["admin", "ops_coordinator", "supervisor"]:
+            raise HTTPException(
+                status_code=403,
+                detail="Only admin, ops coordinator, or supervisor can send manual reminders"
+            )
+        
+        # Trigger manual reminder
+        scheduler = get_scheduler_service()
+        result = scheduler.trigger_reminder_manually(layover_id, db)
+        
+        if result["success"]:
+            return {
+                "success": True,
+                "message": result.get("message", "Reminder sent successfully")
+            }
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail=result.get("error", "Failed to send reminder")
+            )
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==================== SCHEDULER STATUS ENDPOINT ====================
+
+@router.get(
+    "/scheduler/status",
+    summary="Get scheduler status",
+    description="Get background scheduler status and job information (admin only)"
+)
+def get_scheduler_status(
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get scheduler status
+    
+    Returns information about:
+    - Scheduler running status
+    - Registered jobs
+    - Next run times
+    - Job configurations
+    
+    Required permissions: admin, supervisor
+    """
+    from app.services.scheduler_service import get_scheduler_service
+    
+    try:
+        # Permission check
+        if current_user.role not in ["admin", "supervisor"]:
+            raise HTTPException(
+                status_code=403,
+                detail="Only admin or supervisor can view scheduler status"
+            )
+        
+        scheduler = get_scheduler_service()
+        status_info = scheduler.get_scheduler_status()
+        
+        return status_info
+    
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
