@@ -1,0 +1,788 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Layover Accommodation Request - Confirmation</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 28px;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            font-size: 16px;
+            opacity: 0.9;
+        }
+
+        .content {
+            padding: 40px;
+        }
+
+        .info-section {
+            margin-bottom: 30px;
+        }
+
+        .info-section h2 {
+            color: #333;
+            font-size: 20px;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #667eea;
+        }
+
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-top: 15px;
+        }
+
+        .info-item {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .info-label {
+            font-size: 12px;
+            text-transform: uppercase;
+            color: #666;
+            font-weight: 600;
+            margin-bottom: 5px;
+            letter-spacing: 0.5px;
+        }
+
+        .info-value {
+            font-size: 16px;
+            color: #333;
+            font-weight: 500;
+        }
+
+        .info-value.large {
+            font-size: 24px;
+            color: #667eea;
+        }
+
+        .rooms-breakdown {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 10px;
+        }
+
+        .rooms-breakdown .room-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #dee2e6;
+        }
+
+        .rooms-breakdown .room-item:last-child {
+            border-bottom: none;
+        }
+
+        .special-requirements {
+            background: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 15px;
+            border-radius: 4px;
+            margin-top: 10px;
+        }
+
+        .special-requirements strong {
+            display: block;
+            margin-bottom: 8px;
+            color: #856404;
+        }
+
+        .special-requirements p {
+            color: #856404;
+            margin: 5px 0;
+        }
+
+        .action-section {
+            margin-top: 40px;
+            padding-top: 30px;
+            border-top: 2px solid #e9ecef;
+        }
+
+        .action-section h3 {
+            color: #333;
+            font-size: 18px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        .button-group {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .btn {
+            padding: 16px 24px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-align: center;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+
+        .btn-confirm {
+            background: #28a745;
+            color: white;
+        }
+
+        .btn-confirm:hover {
+            background: #218838;
+        }
+
+        .btn-decline {
+            background: #dc3545;
+            color: white;
+        }
+
+        .btn-decline:hover {
+            background: #c82333;
+        }
+
+        .btn-changes {
+            background: #ffc107;
+            color: #333;
+        }
+
+        .btn-changes:hover {
+            background: #e0a800;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.7);
+            z-index: 1000;
+            overflow-y: auto;
+            padding: 20px;
+        }
+
+        .modal.active {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-content {
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            max-width: 500px;
+            width: 100%;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .modal-header h3 {
+            color: #333;
+            font-size: 22px;
+        }
+
+        .close-modal {
+            background: none;
+            border: none;
+            font-size: 28px;
+            cursor: pointer;
+            color: #999;
+            line-height: 1;
+        }
+
+        .close-modal:hover {
+            color: #333;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            color: #333;
+            font-weight: 600;
+        }
+
+        .form-group input,
+        .form-group textarea,
+        .form-group select {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e9ecef;
+            border-radius: 6px;
+            font-size: 14px;
+            font-family: inherit;
+        }
+
+        .form-group input:focus,
+        .form-group textarea:focus,
+        .form-group select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .form-group textarea {
+            min-height: 100px;
+            resize: vertical;
+        }
+
+        .checkbox-group {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .checkbox-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .checkbox-item input[type="checkbox"] {
+            width: 20px;
+            height: 20px;
+        }
+
+        .required {
+            color: #dc3545;
+        }
+
+        .btn-submit {
+            width: 100%;
+            padding: 14px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+
+        .btn-submit:hover {
+            background: #5568d3;
+        }
+
+        .btn-cancel {
+            width: 100%;
+            padding: 14px;
+            background: #6c757d;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+
+        .btn-cancel:hover {
+            background: #5a6268;
+        }
+
+        .alert {
+            padding: 15px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+        }
+
+        .alert-warning {
+            background: #fff3cd;
+            border: 1px solid #ffc107;
+            color: #856404;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 20px;
+        }
+
+        .loading.active {
+            display: block;
+        }
+
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .footer {
+            background: #f8f9fa;
+            padding: 20px 40px;
+            text-align: center;
+            color: #666;
+            font-size: 14px;
+        }
+
+        @media (max-width: 768px) {
+            .content {
+                padding: 20px;
+            }
+
+            .info-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .button-group {
+                grid-template-columns: 1fr;
+            }
+
+            .modal-content {
+                padding: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>✈️ Crew Accommodation Request</h1>
+            <p>Layover Confirmation Required</p>
+        </div>
+
+        <div class="content">
+            {% if not can_respond %}
+            <div class="alert alert-warning">
+                <strong>⚠️ Note:</strong> This request has already been responded to. If you need to make changes, please contact the airline operations team directly.
+            </div>
+            {% endif %}
+
+            <!-- Request Details -->
+            <div class="info-section">
+                <h2>📋 Request Details</h2>
+                <div class="info-grid">
+                    <div class="info-item">
+                        <span class="info-label">Request Number</span>
+                        <span class="info-value">{{ layover.request_number }}</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Route</span>
+                        <span class="info-value">{{ layover.route }}</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Station</span>
+                        <span class="info-value">{{ layover.station_name }}</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Hotel</span>
+                        <span class="info-value">{{ layover.hotel_name }}</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Stay Details -->
+            <div class="info-section">
+                <h2>📅 Stay Details</h2>
+                <div class="info-grid">
+                    <div class="info-item">
+                        <span class="info-label">Check-In</span>
+                        <span class="info-value">{{ layover.check_in_date }} at {{ layover.check_in_time }}</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Check-Out</span>
+                        <span class="info-value">{{ layover.check_out_date }} at {{ layover.check_out_time }}</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Duration</span>
+                        <span class="info-value">{{ layover.duration_hours }} hours</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Crew Members</span>
+                        <span class="info-value large">{{ layover.crew_count }}</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Room Breakdown -->
+            <div class="info-section">
+                <h2>🛏️ Room Requirements</h2>
+                <div class="rooms-breakdown">
+                    {% if layover.room_breakdown.single_rooms > 0 %}
+                    <div class="room-item">
+                        <span>Single Rooms</span>
+                        <strong>{{ layover.room_breakdown.single_rooms }}</strong>
+                    </div>
+                    {% endif %}
+                    {% if layover.room_breakdown.double_rooms > 0 %}
+                    <div class="room-item">
+                        <span>Double Rooms</span>
+                        <strong>{{ layover.room_breakdown.double_rooms }}</strong>
+                    </div>
+                    {% endif %}
+                    {% if layover.room_breakdown.suite_rooms > 0 %}
+                    <div class="room-item">
+                        <span>Suite Rooms</span>
+                        <strong>{{ layover.room_breakdown.suite_rooms }}</strong>
+                    </div>
+                    {% endif %}
+                    <div class="room-item">
+                        <span><strong>Total Rooms</strong></span>
+                        <strong>{{ layover.room_breakdown.single_rooms + layover.room_breakdown.double_rooms + layover.room_breakdown.suite_rooms }}</strong>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Special Requirements -->
+            {% if layover.special_requirements %}
+            <div class="info-section">
+                <h2>⚠️ Special Requirements</h2>
+                <div class="special-requirements">
+                    <strong>Please Note:</strong>
+                    <p>{{ layover.special_requirements }}</p>
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Action Buttons -->
+            {% if can_respond %}
+            <div class="action-section">
+                <h3>How would you like to respond?</h3>
+                <div class="button-group">
+                    <button class="btn btn-confirm" onclick="showConfirmModal()">
+                        ✅ Confirm Booking
+                    </button>
+                    <button class="btn btn-decline" onclick="showDeclineModal()">
+                        ❌ Decline Request
+                    </button>
+                    <button class="btn btn-changes" onclick="showChangesModal()">
+                        📝 Request Changes
+                    </button>
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Token Expiry Info -->
+            <div style="text-align: center; margin-top: 30px; color: #666; font-size: 14px;">
+                <p>⏰ This confirmation link expires on {{ token_expires_at }}</p>
+            </div>
+        </div>
+
+        <div class="footer">
+            <p>If you have any questions, please contact our operations team</p>
+            <p><strong>Email:</strong> ops@airline.com | <strong>Phone:</strong> +1-800-AIRLINE</p>
+        </div>
+    </div>
+
+    <!-- Confirm Modal -->
+    <div id="confirmModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>✅ Confirm Booking</h3>
+                <button class="close-modal" onclick="closeModal('confirmModal')">&times;</button>
+            </div>
+            <form id="confirmForm" onsubmit="submitConfirm(event)">
+                <div class="form-group">
+                    <label for="confirmation_number">Confirmation Number (Optional)</label>
+                    <input type="text" id="confirmation_number" name="confirmation_number" placeholder="Your booking reference">
+                </div>
+                <div class="form-group">
+                    <label for="hotel_note_confirm">Additional Notes (Optional)</label>
+                    <textarea id="hotel_note_confirm" name="hotel_note" placeholder="Any additional information..."></textarea>
+                </div>
+                <button type="submit" class="btn-submit">Confirm Booking</button>
+                <button type="button" class="btn-cancel" onclick="closeModal('confirmModal')">Cancel</button>
+            </form>
+            <div class="loading" id="confirmLoading">
+                <div class="spinner"></div>
+                <p>Submitting...</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Decline Modal -->
+    <div id="declineModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>❌ Decline Request</h3>
+                <button class="close-modal" onclick="closeModal('declineModal')">&times;</button>
+            </div>
+            <form id="declineForm" onsubmit="submitDecline(event)">
+                <div class="form-group">
+                    <label for="decline_reason">Reason for Declining <span class="required">*</span></label>
+                    <select id="decline_reason" name="decline_reason" required>
+                        <option value="">Select a reason...</option>
+                        <option value="fully_booked">Fully Booked</option>
+                        <option value="insufficient_notice">Insufficient Notice</option>
+                        <option value="cannot_meet_requirements">Cannot Meet Requirements</option>
+                        <option value="other">Other</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="decline_note">Additional Information (Optional)</label>
+                    <textarea id="decline_note" name="decline_note" placeholder="Please provide any additional details..."></textarea>
+                </div>
+                <button type="submit" class="btn-submit">Submit Decline</button>
+                <button type="button" class="btn-cancel" onclick="closeModal('declineModal')">Cancel</button>
+            </form>
+            <div class="loading" id="declineLoading">
+                <div class="spinner"></div>
+                <p>Submitting...</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Request Changes Modal -->
+    <div id="changesModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>📝 Request Changes</h3>
+                <button class="close-modal" onclick="closeModal('changesModal')">&times;</button>
+            </div>
+            <form id="changesForm" onsubmit="submitChanges(event)">
+                <div class="form-group">
+                    <label>What needs to be changed? <span class="required">*</span></label>
+                    <div class="checkbox-group">
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="change_check_in" name="change_types" value="check_in_time">
+                            <label for="change_check_in">Check-in Time</label>
+                        </div>
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="change_check_out" name="change_types" value="check_out_time">
+                            <label for="change_check_out">Check-out Time</label>
+                        </div>
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="change_rooms" name="change_types" value="room_configuration">
+                            <label for="change_rooms">Room Configuration</label>
+                        </div>
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="change_requirements" name="change_types" value="special_requirements">
+                            <label for="change_requirements">Special Requirements</label>
+                        </div>
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="change_other" name="change_types" value="other">
+                            <label for="change_other">Other</label>
+                        </div>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="change_note">Please Explain <span class="required">*</span></label>
+                    <textarea id="change_note" name="change_note" required minlength="10" placeholder="Please describe what changes are needed (minimum 10 characters)..."></textarea>
+                </div>
+                <button type="submit" class="btn-submit">Submit Request</button>
+                <button type="button" class="btn-cancel" onclick="closeModal('changesModal')">Cancel</button>
+            </form>
+            <div class="loading" id="changesLoading">
+                <div class="spinner"></div>
+                <p>Submitting...</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const token = "{{ token }}";
+
+        function showConfirmModal() {
+            document.getElementById('confirmModal').classList.add('active');
+        }
+
+        function showDeclineModal() {
+            document.getElementById('declineModal').classList.add('active');
+        }
+
+        function showChangesModal() {
+            document.getElementById('changesModal').classList.add('active');
+        }
+
+        function closeModal(modalId) {
+            document.getElementById(modalId).classList.remove('active');
+        }
+
+        async function submitConfirm(event) {
+            event.preventDefault();
+            const form = event.target;
+            const formData = new FormData(form);
+            
+            // Show loading
+            form.style.display = 'none';
+            document.getElementById('confirmLoading').classList.add('active');
+
+            try {
+                const response = await fetch(`/confirm/${token}/confirm`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        confirmation_number: formData.get('confirmation_number') || null,
+                        hotel_note: formData.get('hotel_note') || null,
+                    }),
+                });
+
+                if (response.ok) {
+                    window.location.href = `/confirm/${token}/success?action=confirmed`;
+                } else {
+                    const error = await response.json();
+                    alert('Error: ' + error.detail);
+                    form.style.display = 'block';
+                    document.getElementById('confirmLoading').classList.remove('active');
+                }
+            } catch (error) {
+                alert('Network error. Please try again.');
+                form.style.display = 'block';
+                document.getElementById('confirmLoading').classList.remove('active');
+            }
+        }
+
+        async function submitDecline(event) {
+            event.preventDefault();
+            const form = event.target;
+            const formData = new FormData(form);
+            
+            // Show loading
+            form.style.display = 'none';
+            document.getElementById('declineLoading').classList.add('active');
+
+            try {
+                const response = await fetch(`/confirm/${token}/decline`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        decline_reason: formData.get('decline_reason'),
+                        decline_note: formData.get('decline_note') || null,
+                    }),
+                });
+
+                if (response.ok) {
+                    window.location.href = `/confirm/${token}/success?action=declined`;
+                } else {
+                    const error = await response.json();
+                    alert('Error: ' + error.detail);
+                    form.style.display = 'block';
+                    document.getElementById('declineLoading').classList.remove('active');
+                }
+            } catch (error) {
+                alert('Network error. Please try again.');
+                form.style.display = 'block';
+                document.getElementById('declineLoading').classList.remove('active');
+            }
+        }
+
+        async function submitChanges(event) {
+            event.preventDefault();
+            const form = event.target;
+            const formData = new FormData(form);
+            
+            // Get selected change types
+            const changeTypes = [];
+            document.querySelectorAll('input[name="change_types"]:checked').forEach(cb => {
+                changeTypes.push(cb.value);
+            });
+
+            if (changeTypes.length === 0) {
+                alert('Please select at least one change type');
+                return;
+            }
+            
+            // Show loading
+            form.style.display = 'none';
+            document.getElementById('changesLoading').classList.add('active');
+
+            try {
+                const response = await fetch(`/confirm/${token}/request-changes`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        change_types: changeTypes,
+                        change_note: formData.get('change_note'),
+                    }),
+                });
+
+                if (response.ok) {
+                    window.location.href = `/confirm/${token}/success?action=changes_requested`;
+                } else {
+                    const error = await response.json();
+                    alert('Error: ' + error.detail);
+                    form.style.display = 'block';
+                    document.getElementById('changesLoading').classList.remove('active');
+                }
+            } catch (error) {
+                alert('Network error. Please try again.');
+                form.style.display = 'block';
+                document.getElementById('changesLoading').classList.remove('active');
+            }
+        }
+
+        // Close modal when clicking outside
+        window.onclick = function(event) {
+            if (event.target.classList.contains('modal')) {
+                event.target.classList.remove('active');
+            }
+        }
+    </script>
+</body>
+</html>

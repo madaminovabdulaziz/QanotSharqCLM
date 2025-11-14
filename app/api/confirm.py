@@ -4,8 +4,11 @@ Hotel confirmation endpoints - NO AUTHENTICATION REQUIRED
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import HTMLResponse
+from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 from datetime import datetime
+from pathlib import Path
 
 from app.core.database import get_db
 from app.services.confirmation_service import ConfirmationService
@@ -26,6 +29,10 @@ from app.schemas.confirmation import (
 
 router = APIRouter(prefix="/confirm", tags=["Hotel Confirmation (Public)"])
 
+# Setup Jinja2 templates
+templates_dir = Path(__file__).parent.parent / "templates" / "confirmation"
+templates = Jinja2Templates(directory=str(templates_dir))
+
 
 def get_client_info(request: Request) -> dict:
     """Extract client IP and user agent from request"""
@@ -37,10 +44,10 @@ def get_client_info(request: Request) -> dict:
 
 @router.get(
     "/{token}",
-    response_model=LayoverConfirmationDetails,
+    response_class=HTMLResponse,
     responses={
-        410: {"model": TokenExpiredResponse, "description": "Token expired"},
-        409: {"model": TokenAlreadyUsedResponse, "description": "Token already used"},
+        410: {"description": "Token expired"},
+        409: {"description": "Token already used"},
         404: {"description": "Token not found"},
     },
     summary="Load hotel confirmation page",
@@ -48,7 +55,7 @@ def get_client_info(request: Request) -> dict:
     **PUBLIC ENDPOINT - NO AUTHENTICATION REQUIRED**
     
     Hotel clicks link from email and lands on this page.
-    Returns layover details for the hotel to review and respond.
+    Returns HTML page with layover details for the hotel to review and respond.
     
     **Token Validation:**
     - Token must not be expired (72 hours)
@@ -58,6 +65,7 @@ def get_client_info(request: Request) -> dict:
 )
 async def get_confirmation_page(
     token: str,
+    request: Request,
     db: Session = Depends(get_db),
 ):
     """
@@ -67,7 +75,7 @@ async def get_confirmation_page(
     1. Hotel receives email with confirmation link
     2. Clicks link → arrives here
     3. System validates token
-    4. Returns layover details if valid
+    4. Returns HTML page with layover details if valid
     5. Hotel sees confirmation page with 3 buttons: Confirm / Decline / Request Changes
     """
     confirmation_service = ConfirmationService(db)
@@ -78,66 +86,85 @@ async def get_confirmation_page(
         layover = result["layover"]
         token_obj = result["token"]
 
-        # Build response
-        response = LayoverConfirmationDetails(
-            layover_id=layover.id,
-            request_number=layover.uuid,
-            route=f"{layover.origin_station_code} → {layover.destination_station_code}",
-            station_name=layover.station.name,
-            hotel_name=layover.hotel.name,
-            check_in_date=layover.check_in_date.isoformat(),
-            check_in_time=layover.check_in_time.strftime("%H:%M"),
-            check_out_date=layover.check_out_date.isoformat(),
-            check_out_time=layover.check_out_time.strftime("%H:%M"),
-            duration_hours=int(
-                (
-                    datetime.combine(layover.check_out_date, layover.check_out_time)
-                    - datetime.combine(layover.check_in_date, layover.check_in_time)
-                ).total_seconds()
-                / 3600
-            ),
-            crew_count=layover.crew_count,
-            room_breakdown=layover.room_breakdown,
-            special_requirements=layover.special_requirements,
-            status=layover.status,
-            sent_at=layover.sent_at,
-            token_expires_at=token_obj.expires_at,
-            can_respond=result["can_respond"],
+        # Calculate duration
+        duration_hours = int(
+            (
+                datetime.combine(layover.check_out_date, layover.check_out_time)
+                - datetime.combine(layover.check_in_date, layover.check_in_time)
+            ).total_seconds()
+            / 3600
         )
 
-        return response
+        # Build context for template
+        context = {
+            "request": request,
+            "token": token,
+            "layover": {
+                "id": layover.id,
+                "request_number": layover.uuid,
+                "route": f"{layover.origin_station_code} → {layover.destination_station_code}",
+                "station_name": layover.station.name,
+                "hotel_name": layover.hotel.name,
+                "check_in_date": layover.check_in_date.strftime("%B %d, %Y"),
+                "check_in_time": layover.check_in_time.strftime("%H:%M"),
+                "check_out_date": layover.check_out_date.strftime("%B %d, %Y"),
+                "check_out_time": layover.check_out_time.strftime("%H:%M"),
+                "duration_hours": duration_hours,
+                "crew_count": layover.crew_count,
+                "room_breakdown": layover.room_breakdown,
+                "special_requirements": layover.special_requirements,
+                "status": layover.status.value,
+            },
+            "token_expires_at": token_obj.expires_at.strftime("%B %d, %Y at %H:%M UTC"),
+            "can_respond": result["can_respond"],
+        }
+
+        # Return HTML page
+        return templates.TemplateResponse("confirmation_page.html", context)
 
     except TokenExpiredException as e:
-        # Token expired - return 410 Gone with contact info
-        raise HTTPException(
-            status_code=410,
-            detail={
-                "expired": True,
-                "message": str(e),
-                "contact_email": "ops@airline.com",
-                "contact_phone": "+1-800-AIRLINE",
-            },
-        )
+        # Token expired - return expired page
+        context = {
+            "request": request,
+            "error_type": "expired",
+            "message": str(e),
+            "contact_email": "ops@airline.com",
+            "contact_phone": "+1-800-AIRLINE",
+        }
+        return templates.TemplateResponse("token_expired.html", context, status_code=410)
 
     except TokenAlreadyUsedException as e:
-        # Token already used - return 409 Conflict
-        raise HTTPException(
-            status_code=409,
-            detail={
-                "already_used": True,
-                "message": str(e),
-                "contact_email": "ops@airline.com",
-                "contact_phone": "+1-800-AIRLINE",
-            },
-        )
+        # Token already used - return already used page
+        context = {
+            "request": request,
+            "error_type": "already_used",
+            "message": str(e),
+            "contact_email": "ops@airline.com",
+            "contact_phone": "+1-800-AIRLINE",
+        }
+        return templates.TemplateResponse("token_expired.html", context, status_code=409)
 
     except ValueError as e:
         # Invalid token or layover not found
-        raise HTTPException(status_code=404, detail=str(e))
+        context = {
+            "request": request,
+            "error_type": "invalid",
+            "message": "Invalid confirmation link. Please check your email for the correct link.",
+            "contact_email": "ops@airline.com",
+            "contact_phone": "+1-800-AIRLINE",
+        }
+        return templates.TemplateResponse("token_expired.html", context, status_code=404)
 
     except InvalidStatusTransitionException as e:
         # Layover in wrong status
-        raise HTTPException(status_code=400, detail=str(e))
+        context = {
+            "request": request,
+            "error_type": "invalid_status",
+            "message": str(e),
+            "contact_email": "ops@airline.com",
+            "contact_phone": "+1-800-AIRLINE",
+        }
+        return templates.TemplateResponse("token_expired.html", context, status_code=400)
 
 
 @router.post(
@@ -340,3 +367,35 @@ async def request_changes(
 
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
+
+
+# ============= SUCCESS PAGE ENDPOINT =============
+
+@router.get(
+    "/{token}/success",
+    response_class=HTMLResponse,
+    summary="Success page after hotel response",
+    description="Shows thank you page after hotel responds (confirm/decline/request changes)"
+)
+async def success_page(
+    token: str,
+    request: Request,
+    action: str = "confirmed",  # Query param: confirmed, declined, changes_requested
+    db: Session = Depends(get_db),
+):
+    """
+    Success page after hotel responds
+    
+    **Actions:**
+    - confirmed: "Thank you for confirming"
+    - declined: "Thank you for letting us know"
+    - changes_requested: "Thank you, our team will contact you"
+    """
+    context = {
+        "request": request,
+        "action": action,
+        "contact_email": "ops@airline.com",
+        "contact_phone": "+1-800-AIRLINE",
+    }
+    
+    return templates.TemplateResponse("success.html", context)
