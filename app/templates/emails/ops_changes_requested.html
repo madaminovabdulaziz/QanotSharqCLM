@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+
+{% block title %}Hotel Requests Changes: Request #{{ layover.id }}{% endblock %}
+
+{% block header_title %}📝 Hotel Requests Changes{% endblock %}
+
+{% block content %}
+<p>Hello {{ recipient_name }},</p>
+
+<p><strong>The hotel has requested changes</strong> to the layover accommodation request. Please review their feedback below and take appropriate action.</p>
+
+<div style="background-color: #fef3c7; border-left: 4px solid #f59e0b; padding: 16px; margin: 20px 0; border-radius: 4px;">
+    <p style="margin: 0; font-weight: 600; color: #92400e;">
+        📝 Changes requested by {{ hotel.name }}
+    </p>
+</div>
+
+<div class="info-box">
+    <h3>📋 REQUEST DETAILS</h3>
+    <div class="info-row">
+        <span class="info-label">Request ID:</span>
+        <span class="info-value">#{{ layover.id }}</span>
+    </div>
+    <div class="info-row">
+        <span class="info-label">Flight Route:</span>
+        <span class="info-value">{{ layover.origin_station_code }} → {{ layover.destination_station_code }}</span>
+    </div>
+    <div class="info-row">
+        <span class="info-label">Station:</span>
+        <span class="info-value">{{ station.name }}</span>
+    </div>
+    <div class="info-row">
+        <span class="info-label">Hotel:</span>
+        <span class="info-value">{{ hotel.name }}</span>
+    </div>
+    <div class="info-row">
+        <span class="info-label">Check-In Date:</span>
+        <span class="info-value">{{ layover.check_in_date.strftime('%B %d, %Y') }}</span>
+    </div>
+    <div class="info-row">
+        <span class="info-label">Crew Count:</span>
+        <span class="info-value">{{ layover.crew_count }} crew members</span>
+    </div>
+</div>
+
+<div class="info-box" style="background-color: #fef3c7; border-color: #f59e0b;">
+    <h3 style="color: #92400e;">💬 REQUESTED CHANGES</h3>
+    {% if layover.hotel_response_note %}
+    <p style="margin: 0; color: #1e293b; white-space: pre-wrap;">{{ layover.hotel_response_note }}</p>
+    {% else %}
+    <p style="margin: 0; color: #64748b;">No additional details provided</p>
+    {% endif %}
+</div>
+
+<div class="info-box">
+    <h3>⏰ RESPONSE TIMELINE</h3>
+    <div class="info-row">
+        <span class="info-label">Response Received:</span>
+        <span class="info-value">{{ response_received_at.strftime('%B %d, %Y at %H:%M UTC') if response_received_at else 'Just now' }}</span>
+    </div>
+    {% if response_time_hours %}
+    <div class="info-row">
+        <span class="info-label">Response Time:</span>
+        <span class="info-value">{{ response_time_hours }} hours</span>
+    </div>
+    {% endif %}
+</div>
+
+<div class="divider"></div>
+
+<p style="text-align: center; font-weight: 600; color: #f59e0b;">
+    🎯 Recommended Actions:
+</p>
+
+<ol style="color: #475569; line-height: 1.8;">
+    <li><strong>Contact Hotel:</strong> Call {{ hotel.name }} at {{ hotel.phone }} to discuss the requested changes</li>
+    <li><strong>Review Request:</strong> Determine if the requested changes are feasible</li>
+    <li><strong>Update Request:</strong> Modify the layover request based on hotel feedback</li>
+    <li><strong>Resend to Hotel:</strong> Send updated confirmation request once changes are made</li>
+    <li><strong>Alternative:</strong> If changes cannot be accommodated, consider sending to a different hotel</li>
+</ol>
+
+<div class="alert alert-info">
+    <strong>💡 Note:</strong> The hotel is interested in accommodating this request but needs some modifications. Quick response will help secure the booking.
+</div>
+
+<div class="button-container">
+    <a href="{{ layover_detail_url }}" class="button" style="background-color: #3b82f6; color: #ffffff;">
+        📋 VIEW REQUEST & TAKE ACTION
+    </a>
+</div>
+
+<div class="divider"></div>
+
+<p style="font-size: 14px; color: #64748b; margin-top: 20px;">
+    <strong>Hotel Contact Information:</strong><br>
+    Hotel: {{ hotel.name }}<br>
+    Phone: {{ hotel.phone }}<br>
+    {% if hotel.email %}Email: {{ hotel.email }}<br>{% endif %}
+    {% if hotel.whatsapp %}WhatsApp: {{ hotel.whatsapp }}{% endif %}
+</p>
+{% endblock %}
