@@ -125,7 +125,6 @@ class HotelCreate(HotelBase):
     contract_rate: Optional[Decimal] = Field(
         None,
         ge=0,
-        decimal_places=2,
         description="Pre-negotiated rate per room per night (USD)",
         examples=[120.00, 150.50]
     )
@@ -213,7 +212,7 @@ class HotelUpdate(BaseModel):
     whatsapp_number: Optional[str] = Field(None, max_length=20)
     whatsapp_enabled: Optional[bool] = None
     contract_type: Optional[ContractType] = None
-    contract_rate: Optional[Decimal] = Field(None, ge=0, decimal_places=2)
+    contract_rate: Optional[Decimal] = Field(None, ge=0)
     contract_valid_until: Optional[date] = None
     notes: Optional[str] = Field(None, max_length=2000)
     is_active: Optional[bool] = None

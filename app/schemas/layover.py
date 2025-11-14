@@ -9,7 +9,7 @@ from decimal import Decimal
 from enum import Enum
 from .user import UserPublic
 
-from pydantic import BaseModel, Field, field_validator, model_validator, ConfigDict, condecimal
+from pydantic import BaseModel, Field, field_validator, model_validator, ConfigDict
 
 
 # ==================== ENUMS ====================
@@ -126,7 +126,7 @@ class LayoverCreate(BaseModel):
     is_positioning: bool = False
 
     # Cost Tracking (API shows decimal; DB stores cents)
-    estimated_cost: Optional[condecimal(max_digits=10, decimal_places=2)] = None
+    estimated_cost: Optional[Decimal] = None
     currency: str = Field("USD", max_length=3)
 
     @model_validator(mode="after")
@@ -166,7 +166,7 @@ class LayoverUpdate(BaseModel):
     special_requirements: Optional[str] = Field(None, max_length=1000)
     transport_required: Optional[bool] = None
     transport_details: Optional[str] = Field(None, max_length=500)
-    estimated_cost: Optional[condecimal(max_digits=10, decimal_places=2)] = None
+    estimated_cost: Optional[Decimal] = None
     currency: Optional[str] = Field(None, max_length=3)
     room_breakdown: Optional[RoomBreakdown] = None
 
@@ -284,8 +284,8 @@ class LayoverDetailResponse(LayoverResponse):
     is_positioning: bool
 
     # Costs (API = Decimal, DB stores cents)
-    estimated_cost: Optional[condecimal(max_digits=10, decimal_places=2)] = None
-    actual_cost: Optional[condecimal(max_digits=10, decimal_places=2)] = None
+    estimated_cost: Optional[Decimal] = None
+    actual_cost: Optional[Decimal] = None
     currency: str
 
 
